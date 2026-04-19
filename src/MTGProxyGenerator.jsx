@@ -245,6 +245,68 @@ function getSeparatorGradient(manaCost){
   return `linear-gradient(to right, ${stops.join(", ")}, transparent 100%)`;
 }
 
+/* ── Quality tokens silently prepended to every prompt ── */
+const QUALITY_PREFIX = "masterpiece, best quality, highly detailed, sharp focus, intricate details, professional digital illustration, concept art, artstation";
+
+/* ── Universal negative silently merged into every generation ── */
+const UNIVERSAL_NEGATIVE = [
+  // anatomy & duplicates
+  "multiple heads, extra heads, two heads, three heads, duplicate faces, cloned face, extra faces",
+  "extra limbs, extra arms, extra legs, extra hands, fused fingers, too many fingers, bad hands, bad feet",
+  "malformed limbs, missing limbs, disconnected limbs, bad anatomy, wrong anatomy, disfigured, deformed, mutated, mutation",
+  "gross proportions, long neck, morbid, ugly, poorly drawn face, poorly drawn hands",
+  // quality
+  "blurry, out of focus, low quality, worst quality, bad quality, low resolution, jpeg artifacts, noise, grain",
+  // unwanted content
+  "text, watermark, signature, logo, username, artist name, border, frame, split image, multiple panels",
+  // style conflicts
+  "modern, contemporary, photograph, photorealistic, realistic photo, 3d render, cgi, anime, manga, cartoon",
+].join(", ");
+
+/* ── MTG art style presets for Stable Diffusion ── */
+const MTG_STYLE_PRESETS = [
+  { id:"fantasy", label:"Fantasy Épico", emoji:"⚔️",
+    prompt:"single subject, epic fantasy illustration, heroic composition, dramatic cinematic lighting, intricate fantasy armor, painterly brushstrokes, rich magical atmosphere, warm color palette",
+    negative:"multiple subjects, crowded scene, flat lighting, modern clothing, contemporary setting" },
+  { id:"dark", label:"Oscuro", emoji:"💀",
+    prompt:"single figure, dark fantasy art, ominous foreboding atmosphere, dramatic chiaroscuro lighting, deep shadows, gothic aesthetic, grim and menacing expression, muted cold color palette, oil painting style",
+    negative:"bright colors, cheerful, happy, daytime, colorful, warm tones" },
+  { id:"creature", label:"Criatura", emoji:"🐉",
+    prompt:"single creature, one head, solo fantasy beast, close-up portrait, detailed scales and fur texture, fierce glowing eyes, symmetrical anatomy, dramatic rim lighting, dynamic painterly illustration",
+    negative:"two heads, multiple heads, multiple creatures, humanoid, human, modern, wide landscape, background characters" },
+  { id:"landscape", label:"Paisaje", emoji:"🏔️",
+    prompt:"epic fantasy landscape, vast sweeping environment, no characters, dramatic magical sky, volumetric clouds, detailed foliage and terrain, establishing wide shot, painterly fantasy world, god rays",
+    negative:"characters, people, portrait, close-up faces, modern buildings, urban, contemporary" },
+  { id:"mythic", label:"Mítico", emoji:"✨",
+    prompt:"solo legendary hero, single character, bust or full body portrait, divine golden aura, heroic triumphant stance, intricate ornate fantasy armor, mythical power emanating, celestial background, epic composition",
+    negative:"multiple characters, group scene, modern clothing, casual, mundane" },
+  { id:"artifact", label:"Artefacto", emoji:"⚙️",
+    prompt:"single magical artifact, detailed close-up, intricate metalwork and gemstones, glowing arcane runes, ancient craftsmanship, mystical energy, dark dramatic background, no living creatures",
+    negative:"characters, people, living creatures, multiple objects, modern technology, industrial" },
+];
+
+const SIZE_PRESETS = [
+  { label:"512×768",  w:512,  h:768  },
+  { label:"640×960",  w:640,  h:960  },
+  { label:"768×1152", w:768,  h:1152 },
+  { label:"832×1216", w:832,  h:1216 },
+];
+
+const DEFAULT_SAMPLERS = ["DPM++ 2M","DPM++ SDE","DPM++ 2M SDE","DPM++ 3M SDE","Euler a","Euler","DDIM","UniPC","LCM","Restart"];
+
+/* ── Artist references per style preset ── */
+const ARTIST_REFS = {
+  fantasy:  ["Greg Rutkowski","Magali Villeneuve","Chris Rahn","Raymond Swanland"],
+  dark:     ["Gerald Brom","Nils Hamm","Terese Nielsen","Wayne Reynolds"],
+  creature: ["Wayne Barlowe","Clint Cearley","Daarken","Karl Kopinski"],
+  landscape:["Adam Paquette","Noah Bradley","Alan Lee","John Avon"],
+  mythic:   ["Jason Chan","Howard Lyon","Greg Staples","Magali Villeneuve"],
+  artifact: ["Volkan Baga","Mark Winters","Seb McKinnon","Daniel Ljunggren"],
+};
+
+/* ── Recommended models note ── */
+const MODEL_TIPS = "Para mejores resultados instala en SD un modelo especializado en ilustración fantasy: DreamShaper, Deliberate, ReV Animated o epiCRealism (disponibles en civitai.com). Los modelos SD 1.5 genéricos producen alucinaciones frecuentes.";
+
 /* ══════════════════════ CARD PREVIEW ══════════════════════ */
 function CardPreview({cardData,artImage,artPosition,customImages,exporting=false,showProxyLabel=true}){
   const{name,typeLine,rulesText,flavorText,power,toughness,manaCost,isCreature,artistName}=cardData;
@@ -410,6 +472,27 @@ export default function MTGProxyGenerator(){
   const [searchError,setSearchError] = useState("");
   const [exporting,setExporting] = useState(false);
   const [showProxyLabel,setShowProxyLabel] = useState(true);
+  const [artSubTab,setArtSubTab] = useState("upload");
+  const [sdConfig,setSdConfig] = useState({
+    url:"http://127.0.0.1:7860",
+    mode:"basic",
+    preset:"fantasy",
+    prompt:"",
+    // Advanced mode extra negatives (UNIVERSAL_NEGATIVE is always applied on top)
+    negativePrompt:"nsfw, nude, sexual content, violence, gore, disturbing imagery",
+    steps:30, cfg:7,
+    sampler:"DPM++ 2M",
+    seed:-1,
+    width:512, height:768,
+    model:"",
+    activeLoras:[], // [{name, weight}]
+  });
+  const [sdGenerating,setSdGenerating] = useState(false);
+  const [sdError,setSdError] = useState("");
+  const [sdModels,setSdModels] = useState([]);
+  const [sdSamplers,setSdSamplers] = useState(DEFAULT_SAMPLERS);
+  const [sdLoras,setSdLoras] = useState([]);
+  const [sdPreview,setSdPreview] = useState(null);
   const fileInputRef = useRef(null);
   const cardRef = useRef(null);
   const exportRef = useRef(null);
@@ -479,6 +562,87 @@ export default function MTGProxyGenerator(){
   const removeManaImage = (symbol)=>{
     setCustomImages(prev=>{const n={...prev};delete n[symbol];return n;});
   };
+
+  /* ── Stable Diffusion ── */
+  const generateWithSD = useCallback(async ()=>{
+    setSdGenerating(true);
+    setSdError("");
+    const preset = MTG_STYLE_PRESETS.find(p=>p.id===sdConfig.preset);
+
+    // LoRA syntax appended to positive prompt
+    const loraStr = (sdConfig.activeLoras||[]).map(l=>`<lora:${l.name}:${l.weight}>`).join(", ");
+
+    // Positive: quality prefix + user prompt + style preset + loras
+    const fullPrompt = [QUALITY_PREFIX, sdConfig.prompt, preset?.prompt, loraStr].filter(Boolean).join(", ");
+
+    // Negative: universal base always included, then preset-specific or user-edited
+    const extraNeg = sdConfig.mode==="advanced"
+      ? sdConfig.negativePrompt
+      : (preset?.negative || "");
+    const fullNegative = [UNIVERSAL_NEGATIVE, extraNeg].filter(Boolean).join(", ");
+
+    try {
+      const res = await fetch(`${sdConfig.url}/sdapi/v1/txt2img`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          prompt:fullPrompt,
+          negative_prompt:fullNegative,
+          steps:sdConfig.steps,
+          cfg_scale:sdConfig.cfg,
+          sampler_name:sdConfig.sampler,
+          seed:sdConfig.seed,
+          width:sdConfig.width,
+          height:sdConfig.height,
+          batch_size:1,
+          ...(sdConfig.model ? {override_settings:{sd_model_checkpoint:sdConfig.model}} : {}),
+        }),
+      });
+      if(!res.ok){
+        let detail = `HTTP ${res.status}`;
+        try { const j = await res.json(); detail = j.message || j.detail || j.error || detail; } catch{}
+        throw new Error(detail);
+      }
+      const data = await res.json();
+      if(data.images?.[0]) setSdPreview(`data:image/png;base64,${data.images[0]}`);
+      else throw new Error("No se recibió imagen en la respuesta");
+    } catch(e){
+      const msg = e.message||"";
+      const isNetwork = msg.toLowerCase().includes("failed to fetch")
+        || msg.toLowerCase().includes("network")
+        || msg === "Failed to fetch"
+        || msg === "Load failed";
+      if(isNetwork){
+        setSdError(`No se puede conectar a Stable Diffusion en ${sdConfig.url}.\nAsegúrate de que esté corriendo con los flags: --api --cors-allow-origins=*`);
+      } else {
+        setSdError(`Error: ${msg}`);
+      }
+    }
+    setSdGenerating(false);
+  },[sdConfig]);
+
+  const fetchSDModels = useCallback(async ()=>{
+    setSdError("");
+    try {
+      // Refresh LoRA list on SD side before fetching
+      await fetch(`${sdConfig.url}/sdapi/v1/refresh-loras`,{method:"POST"}).catch(()=>{});
+      const [modRes,sampRes,loraRes] = await Promise.all([
+        fetch(`${sdConfig.url}/sdapi/v1/sd-models`),
+        fetch(`${sdConfig.url}/sdapi/v1/samplers`),
+        fetch(`${sdConfig.url}/sdapi/v1/loras`),
+      ]);
+      const models = await modRes.json();
+      const samplers = await sampRes.json();
+      setSdModels(models.map(m=>m.title));
+      setSdSamplers(samplers.map(s=>s.name));
+      if(loraRes.ok){
+        const loras = await loraRes.json();
+        setSdLoras(loras.map(l=>l.name||l.alias||"").filter(Boolean));
+      }
+    } catch{
+      setSdError("No se pudo conectar a SD para cargar modelos");
+    }
+  },[sdConfig.url]);
 
   /* ── Scryfall search ── */
   const parseManaCostString = (mc)=>{
@@ -688,71 +852,111 @@ export default function MTGProxyGenerator(){
 
             {/* ── TAB: Arte ── */}
             {activeTab==="art" && (
-              <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                <div
-                  onClick={()=>fileInputRef.current?.click()}
-                  onDrop={handleDrop}
-                  onDragOver={e=>e.preventDefault()}
-                  style={{
-                    border:"2px dashed rgba(255,255,255,0.15)",
-                    borderRadius:12, padding:32,
-                    textAlign:"center", cursor:"pointer",
-                    transition:"border-color 0.2s",
-                    background:"rgba(255,255,255,0.02)",
-                  }}
-                  onMouseEnter={e=>e.currentTarget.style.borderColor="rgba(231,76,60,0.5)"}
-                  onMouseLeave={e=>e.currentTarget.style.borderColor="rgba(255,255,255,0.15)"}
-                >
-                  <div style={{fontSize:32,marginBottom:8}}>🎨</div>
-                  <div style={{fontSize:14,color:"rgba(255,255,255,0.5)"}}>
-                    Click o arrastra una imagen
-                  </div>
-                  <div style={{fontSize:11,color:"rgba(255,255,255,0.25)",marginTop:4}}>
-                    JPG, PNG, WebP
-                  </div>
-                  <input ref={fileInputRef} type="file" accept="image/*"
-                    onChange={handleArtUpload} style={{display:"none"}}/>
+              <div style={{display:"flex",flexDirection:"column",gap:0}}>
+                {/* Art subtabs */}
+                <div style={{display:"flex",marginBottom:16,borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
+                  {[{id:"upload",label:"Cargar imagen"},{id:"generate",label:"Generar con IA"}].map(t=>(
+                    <button key={t.id} onClick={()=>setArtSubTab(t.id)} style={{
+                      flex:1, padding:"9px 0", border:"none", cursor:"pointer",
+                      background:artSubTab===t.id ? "rgba(192,57,43,0.2)" : "rgba(255,255,255,0.02)",
+                      color:artSubTab===t.id ? "#e74c3c" : "rgba(255,255,255,0.4)",
+                      fontSize:12, fontWeight:600, letterSpacing:0.4,
+                      borderRight:t.id==="upload" ? "1px solid rgba(255,255,255,0.08)" : "none",
+                      transition:"all 0.2s",
+                    }}>{t.label}</button>
+                  ))}
                 </div>
-                {artImage && (
-                  <>
-                    <div style={{
-                      width:"100%", height:180, borderRadius:10, overflow:"hidden",
-                      border:"1px solid rgba(255,255,255,0.08)", position:"relative",
-                    }}>
-                      <div style={{
-                        position:"absolute",
-                        width:"100%", height:"100%",
-                        backgroundImage:`url(${artImage})`,
-                        backgroundSize:`${artPosition.zoom*100}%`,
-                        backgroundPosition:`${artPosition.x}% ${artPosition.y}%`,
-                        backgroundRepeat:"no-repeat",
-                      }}/>
-                    </div>
-                    <SliderField label="Escala" value={Math.round(artPosition.zoom*100)}
-                      onChange={v=>setArtPosition(p=>({...p,zoom:v/100}))} min={50} max={300} suffix="%"/>
-                    <SliderField label="Posición horizontal" value={artPosition.x}
-                      onChange={v=>setArtPosition(p=>({...p,x:v}))} min={0} max={100}/>
-                    <SliderField label="Posición vertical" value={artPosition.y}
-                      onChange={v=>setArtPosition(p=>({...p,y:v}))} min={0} max={100}/>
-                    <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"4px 0"}}/>
-                    <SliderField label="Oscurecido inferior" value={Math.round(artPosition.overlayOpacity*100)}
-                      onChange={v=>setArtPosition(p=>({...p,overlayOpacity:v/100}))} min={0} max={100} suffix="%"/>
-                    <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"4px 0"}}/>
-                    <SliderField label="Brillo" value={artPosition.brightness}
-                      onChange={v=>setArtPosition(p=>({...p,brightness:v}))} min={50} max={200} suffix="%"/>
-                    <SliderField label="Contraste" value={artPosition.contrast}
-                      onChange={v=>setArtPosition(p=>({...p,contrast:v}))} min={50} max={200} suffix="%"/>
-                    <SliderField label="Saturación" value={artPosition.saturate}
-                      onChange={v=>setArtPosition(p=>({...p,saturate:v}))} min={0} max={300} suffix="%"/>
-                    <button onClick={()=>{setArtImage(null);setArtPosition({x:50,y:50,zoom:1.5,overlayOpacity:1,brightness:105,contrast:105,saturate:110,sharpness:0});}}
+
+                {/* Subtab: Cargar imagen */}
+                {artSubTab==="upload" && (
+                  <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                    <div
+                      onClick={()=>fileInputRef.current?.click()}
+                      onDrop={handleDrop}
+                      onDragOver={e=>e.preventDefault()}
                       style={{
-                        padding:"8px 16px", border:"1px solid rgba(255,255,255,0.1)",
-                        borderRadius:8, background:"rgba(255,255,255,0.04)",
-                        color:"rgba(255,255,255,0.5)", cursor:"pointer", fontSize:13,
-                      }}>
-                      Quitar imagen
-                    </button>
-                  </>
+                        border:"2px dashed rgba(255,255,255,0.15)",
+                        borderRadius:12, padding:32,
+                        textAlign:"center", cursor:"pointer",
+                        transition:"border-color 0.2s",
+                        background:"rgba(255,255,255,0.02)",
+                      }}
+                      onMouseEnter={e=>e.currentTarget.style.borderColor="rgba(231,76,60,0.5)"}
+                      onMouseLeave={e=>e.currentTarget.style.borderColor="rgba(255,255,255,0.15)"}
+                    >
+                      <div style={{fontSize:32,marginBottom:8}}>🎨</div>
+                      <div style={{fontSize:14,color:"rgba(255,255,255,0.5)"}}>
+                        Click o arrastra una imagen
+                      </div>
+                      <div style={{fontSize:11,color:"rgba(255,255,255,0.25)",marginTop:4}}>
+                        JPG, PNG, WebP
+                      </div>
+                      <input ref={fileInputRef} type="file" accept="image/*"
+                        onChange={handleArtUpload} style={{display:"none"}}/>
+                    </div>
+                    {artImage && (
+                      <>
+                        <div style={{
+                          width:"100%", height:180, borderRadius:10, overflow:"hidden",
+                          border:"1px solid rgba(255,255,255,0.08)", position:"relative",
+                        }}>
+                          <div style={{
+                            position:"absolute",
+                            width:"100%", height:"100%",
+                            backgroundImage:`url(${artImage})`,
+                            backgroundSize:`${artPosition.zoom*100}%`,
+                            backgroundPosition:`${artPosition.x}% ${artPosition.y}%`,
+                            backgroundRepeat:"no-repeat",
+                          }}/>
+                        </div>
+                        <SliderField label="Escala" value={Math.round(artPosition.zoom*100)}
+                          onChange={v=>setArtPosition(p=>({...p,zoom:v/100}))} min={50} max={300} suffix="%"/>
+                        <SliderField label="Posición horizontal" value={artPosition.x}
+                          onChange={v=>setArtPosition(p=>({...p,x:v}))} min={0} max={100}/>
+                        <SliderField label="Posición vertical" value={artPosition.y}
+                          onChange={v=>setArtPosition(p=>({...p,y:v}))} min={0} max={100}/>
+                        <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"4px 0"}}/>
+                        <SliderField label="Oscurecido inferior" value={Math.round(artPosition.overlayOpacity*100)}
+                          onChange={v=>setArtPosition(p=>({...p,overlayOpacity:v/100}))} min={0} max={100} suffix="%"/>
+                        <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"4px 0"}}/>
+                        <SliderField label="Brillo" value={artPosition.brightness}
+                          onChange={v=>setArtPosition(p=>({...p,brightness:v}))} min={50} max={200} suffix="%"/>
+                        <SliderField label="Contraste" value={artPosition.contrast}
+                          onChange={v=>setArtPosition(p=>({...p,contrast:v}))} min={50} max={200} suffix="%"/>
+                        <SliderField label="Saturación" value={artPosition.saturate}
+                          onChange={v=>setArtPosition(p=>({...p,saturate:v}))} min={0} max={300} suffix="%"/>
+                        <button onClick={()=>{setArtImage(null);setArtPosition({x:50,y:50,zoom:1.5,overlayOpacity:1,brightness:105,contrast:105,saturate:110,sharpness:0});}}
+                          style={{
+                            padding:"8px 16px", border:"1px solid rgba(255,255,255,0.1)",
+                            borderRadius:8, background:"rgba(255,255,255,0.04)",
+                            color:"rgba(255,255,255,0.5)", cursor:"pointer", fontSize:13,
+                          }}>
+                          Quitar imagen
+                        </button>
+                      </>
+                    )}
+                  </div>
+                )}
+
+                {/* Subtab: Generar con IA */}
+                {artSubTab==="generate" && (
+                  <SDGeneratePanel
+                    sdConfig={sdConfig}
+                    setSdConfig={setSdConfig}
+                    sdGenerating={sdGenerating}
+                    sdError={sdError}
+                    sdPreview={sdPreview}
+                    sdModels={sdModels}
+                    sdSamplers={sdSamplers}
+                    sdLoras={sdLoras}
+                    onGenerate={generateWithSD}
+                    onFetchModels={fetchSDModels}
+                    onUseAsArt={()=>{
+                      setArtImage(sdPreview);
+                      setArtPosition({x:50,y:50,zoom:1.5,overlayOpacity:1,brightness:105,contrast:105,saturate:110,sharpness:0});
+                      setArtSubTab("upload");
+                    }}
+                  />
                 )}
               </div>
             )}
@@ -935,6 +1139,401 @@ function ManaImageMini({symbol,customImg,onUpload,onRemove,customImages}){
         }}>✕</div>
       )}
       <input ref={ref} type="file" accept="image/*" onChange={onUpload} style={{display:"none"}}/>
+    </div>
+  );
+}
+
+/* ── SD connectivity ping ── */
+function SDPingButton({url}){
+  const [status,setStatus] = useState(null); // null | "ok" | string(error)
+  const [testing,setTesting] = useState(false);
+  const test = async ()=>{
+    setTesting(true);
+    setStatus(null);
+    try{
+      const r = await fetch(`${url}/sdapi/v1/memory`);
+      if(r.ok) setStatus("ok");
+      else setStatus(`HTTP ${r.status}`);
+    }catch(e){
+      setStatus(e.message||"error desconocido");
+    }
+    setTesting(false);
+  };
+  return (
+    <div style={{display:"flex",alignItems:"center",gap:5,flexShrink:0}}>
+      <button onClick={test} disabled={testing} title="Probar conexión" style={{
+        padding:"4px 8px", border:"1px solid rgba(255,255,255,0.1)",
+        borderRadius:5, background:"rgba(255,255,255,0.03)",
+        color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:11,
+      }}>{testing ? "..." : "⚡ Test"}</button>
+      {status && (
+        <span style={{fontSize:10, color: status==="ok" ? "#4ade80" : "#f87171", whiteSpace:"nowrap"}}>
+          {status==="ok" ? "✓ conectado" : status}
+        </span>
+      )}
+    </div>
+  );
+}
+
+/* ── Stable Diffusion generation panel ── */
+function SDGeneratePanel({sdConfig,setSdConfig,sdGenerating,sdError,sdPreview,sdModels,sdSamplers,sdLoras,onGenerate,onUseAsArt,onFetchModels}){
+  const upd = (k,v) => setSdConfig(prev=>({...prev,[k]:v}));
+  const preset = MTG_STYLE_PRESETS.find(p=>p.id===sdConfig.preset);
+
+  const toggleLora = (loraName) => {
+    const existing = (sdConfig.activeLoras||[]).find(l=>l.name===loraName);
+    if(existing){
+      upd("activeLoras",(sdConfig.activeLoras||[]).filter(l=>l.name!==loraName));
+    } else {
+      upd("activeLoras",[...(sdConfig.activeLoras||[]),{name:loraName,weight:0.7}]);
+    }
+  };
+
+  const updateLoraWeight = (loraName, weight) => {
+    upd("activeLoras",(sdConfig.activeLoras||[]).map(l=>l.name===loraName ? {...l,weight} : l));
+  };
+
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+
+      {/* Mode toggle + API URL */}
+      <div style={{display:"flex",alignItems:"center",gap:8}}>
+        <div style={{display:"flex",borderRadius:6,overflow:"hidden",border:"1px solid rgba(255,255,255,0.1)",flexShrink:0}}>
+          {[["basic","Básico"],["advanced","Avanzado"]].map(([m,lbl])=>(
+            <button key={m} onClick={()=>upd("mode",m)} style={{
+              padding:"5px 11px", border:"none", cursor:"pointer",
+              background:sdConfig.mode===m ? "rgba(192,57,43,0.25)" : "transparent",
+              color:sdConfig.mode===m ? "#e74c3c" : "rgba(255,255,255,0.35)",
+              fontSize:11, fontWeight:600,
+              borderRight:m==="basic" ? "1px solid rgba(255,255,255,0.1)" : "none",
+              transition:"all 0.15s",
+            }}>{lbl}</button>
+          ))}
+        </div>
+        <SDPingButton url={sdConfig.url}/>
+        {sdConfig.mode==="advanced" && (
+          <input value={sdConfig.url} onChange={e=>upd("url",e.target.value)}
+            placeholder="http://127.0.0.1:7860"
+            style={{
+              flex:1, padding:"5px 8px",
+              background:"rgba(255,255,255,0.04)",
+              border:"1px solid rgba(255,255,255,0.08)",
+              borderRadius:6, color:"#e8e4df",
+              fontSize:11, fontFamily:"monospace", outline:"none",
+            }}/>
+        )}
+      </div>
+
+      {/* Style presets */}
+      <div>
+        <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>Estilo predefinido</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5}}>
+          {MTG_STYLE_PRESETS.map(p=>(
+            <button key={p.id} onClick={()=>upd("preset",p.id)} style={{
+              padding:"8px 4px", border:"1px solid",
+              borderColor:sdConfig.preset===p.id ? "rgba(231,76,60,0.5)" : "rgba(255,255,255,0.07)",
+              borderRadius:7,
+              background:sdConfig.preset===p.id ? "rgba(231,76,60,0.12)" : "rgba(255,255,255,0.02)",
+              color:sdConfig.preset===p.id ? "#e8e4df" : "rgba(255,255,255,0.45)",
+              cursor:"pointer", fontSize:11, fontWeight:sdConfig.preset===p.id ? 600 : 400,
+              display:"flex", flexDirection:"column", alignItems:"center", gap:3,
+              transition:"all 0.15s",
+            }}>
+              <span style={{fontSize:17}}>{p.emoji}</span>
+              <span>{p.label}</span>
+            </button>
+          ))}
+        </div>
+        {preset && (
+          <div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:6,lineHeight:1.4,fontStyle:"italic"}}>
+            {preset.prompt.split(",").slice(0,4).join(", ")}...
+          </div>
+        )}
+      </div>
+
+      {/* Artist references */}
+      {ARTIST_REFS[sdConfig.preset] && (
+        <div>
+          <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",letterSpacing:0.5,textTransform:"uppercase",marginBottom:6}}>
+            Artista de referencia <span style={{fontWeight:400,textTransform:"none",letterSpacing:0,color:"rgba(255,255,255,0.2)"}}> — click para agregar al prompt</span>
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {ARTIST_REFS[sdConfig.preset].map(artist=>{
+              const tag = `by ${artist}`;
+              const active = sdConfig.prompt.includes(tag);
+              return (
+                <button key={artist} onClick={()=>{
+                  if(active){
+                    upd("prompt", sdConfig.prompt.replace(`, ${tag}`, "").replace(`${tag}, `, "").replace(tag, "").trim().replace(/^,|,$/g,"").trim());
+                  } else {
+                    upd("prompt", [sdConfig.prompt, tag].filter(Boolean).join(", "));
+                  }
+                }} style={{
+                  padding:"4px 10px", border:"1px solid",
+                  borderColor: active ? "rgba(168,85,247,0.6)" : "rgba(255,255,255,0.1)",
+                  borderRadius:20,
+                  background: active ? "rgba(168,85,247,0.15)" : "rgba(255,255,255,0.03)",
+                  color: active ? "#c084fc" : "rgba(255,255,255,0.45)",
+                  cursor:"pointer", fontSize:11, fontWeight: active ? 600 : 400,
+                  transition:"all 0.15s",
+                }}>{active ? "✓ " : ""}{artist}</button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* LoRAs */}
+      <div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+          <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",letterSpacing:0.5,textTransform:"uppercase"}}>
+            LoRAs <span style={{fontWeight:400,textTransform:"none",letterSpacing:0,color:"rgba(255,255,255,0.2)"}}> — estilos adicionales</span>
+          </div>
+          <button onClick={onFetchModels} title="Buscar LoRAs en SD" style={{
+            padding:"3px 8px", border:"1px solid rgba(255,255,255,0.1)",
+            borderRadius:5, background:"rgba(255,255,255,0.03)",
+            color:"rgba(255,255,255,0.35)", cursor:"pointer", fontSize:10,
+          }}>↻ Cargar</button>
+        </div>
+        {sdLoras.length===0 ? (
+          <div style={{fontSize:11,color:"rgba(255,255,255,0.2)",lineHeight:1.5}}>
+            Sin LoRAs detectados. Pulsa <b style={{color:"rgba(255,255,255,0.3)"}}>↻ Cargar</b> con SD corriendo.
+          </div>
+        ) : (
+          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {sdLoras.map(loraName=>{
+              const active = (sdConfig.activeLoras||[]).find(l=>l.name===loraName);
+              const shortName = loraName.length>22 ? loraName.slice(0,20)+"…" : loraName;
+              return (
+                <button key={loraName} onClick={()=>toggleLora(loraName)} style={{
+                  padding:"4px 10px", border:"1px solid",
+                  borderColor:active ? "rgba(251,191,36,0.6)" : "rgba(255,255,255,0.1)",
+                  borderRadius:20,
+                  background:active ? "rgba(251,191,36,0.12)" : "rgba(255,255,255,0.03)",
+                  color:active ? "#fbbf24" : "rgba(255,255,255,0.45)",
+                  cursor:"pointer", fontSize:11, fontWeight:active ? 600 : 400,
+                  transition:"all 0.15s",
+                }}>
+                  {active ? "✓ " : ""}{shortName}{active ? ` (${active.weight.toFixed(1)})` : ""}
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {(sdConfig.activeLoras||[]).length>0 && (
+          <div style={{display:"flex",flexDirection:"column",gap:7,marginTop:10}}>
+            {(sdConfig.activeLoras||[]).map(lora=>(
+              <div key={lora.name} style={{
+                display:"flex",alignItems:"center",gap:8,
+                padding:"6px 10px",borderRadius:7,
+                background:"rgba(251,191,36,0.06)",
+                border:"1px solid rgba(251,191,36,0.15)",
+              }}>
+                <span style={{
+                  fontSize:11,color:"rgba(255,255,255,0.55)",
+                  flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",
+                }}>{lora.name}</span>
+                <input type="range" min={1} max={15} step={1}
+                  value={Math.round(lora.weight*10)}
+                  onChange={e=>updateLoraWeight(lora.name,Number(e.target.value)/10)}
+                  style={{width:70,accentColor:"#fbbf24",height:3,cursor:"pointer",flexShrink:0}}/>
+                <span style={{fontSize:11,color:"#fbbf24",width:26,textAlign:"right",flexShrink:0}}>
+                  {lora.weight.toFixed(1)}
+                </span>
+                <button onClick={()=>toggleLora(lora.name)} title="Quitar LoRA" style={{
+                  padding:"2px 6px", border:"1px solid rgba(251,191,36,0.3)",
+                  borderRadius:4, background:"rgba(251,191,36,0.08)",
+                  color:"rgba(251,191,36,0.7)", cursor:"pointer", fontSize:11, flexShrink:0,
+                }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Prompt */}
+      <div>
+        <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",marginBottom:6,letterSpacing:0.5,textTransform:"uppercase"}}>
+          Tu prompt {sdConfig.mode==="basic" ? <span style={{fontWeight:400,textTransform:"none",letterSpacing:0}}> — se combina con el estilo</span> : ""}
+        </label>
+        <textarea value={sdConfig.prompt} onChange={e=>upd("prompt",e.target.value)}
+          rows={3} placeholder="ej: ancient lich king, undead warrior, glowing eyes, crown of bones..."
+          style={{
+            width:"100%", padding:"10px 14px",
+            background:"rgba(255,255,255,0.04)",
+            border:"1px solid rgba(255,255,255,0.08)",
+            borderRadius:8, color:"#e8e4df",
+            fontSize:13, fontFamily:"inherit",
+            outline:"none", resize:"vertical", boxSizing:"border-box",
+          }}
+          onFocus={e=>e.target.style.borderColor="rgba(231,76,60,0.4)"}
+          onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/>
+      </div>
+
+      {/* Advanced options */}
+      {sdConfig.mode==="advanced" && (
+        <>
+          <div>
+            <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",marginBottom:6,letterSpacing:0.5,textTransform:"uppercase"}}>
+              Negative Prompt adicional
+            </label>
+            <div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginBottom:6,lineHeight:1.4}}>
+              Los negativos de anatomía y calidad se aplican siempre. Agrega aquí extras específicos.
+            </div>
+            <textarea value={sdConfig.negativePrompt} onChange={e=>upd("negativePrompt",e.target.value)}
+              rows={2} placeholder="ej: nsfw, violence, specific style to avoid..."
+              style={{
+                width:"100%", padding:"8px 14px",
+                background:"rgba(255,255,255,0.04)",
+                border:"1px solid rgba(255,255,255,0.08)",
+                borderRadius:8, color:"#e8e4df",
+                fontSize:12, fontFamily:"inherit",
+                outline:"none", resize:"vertical", boxSizing:"border-box",
+              }}
+              onFocus={e=>e.target.style.borderColor="rgba(231,76,60,0.4)"}
+              onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <SliderField label="Steps" value={sdConfig.steps} onChange={v=>upd("steps",v)} min={5} max={60} suffix=""/>
+            <SliderField label="CFG Scale" value={sdConfig.cfg} onChange={v=>upd("cfg",v)} min={1} max={20} suffix=""/>
+          </div>
+          <div>
+            <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",marginBottom:6,letterSpacing:0.5,textTransform:"uppercase"}}>Sampler</label>
+            <select value={sdConfig.sampler} onChange={e=>upd("sampler",e.target.value)}
+              style={{
+                width:"100%", padding:"8px 10px",
+                background:"#1a1a1a", border:"1px solid rgba(255,255,255,0.08)",
+                borderRadius:8, color:"#e8e4df", fontSize:13, outline:"none",
+              }}>
+              {sdSamplers.map(s=><option key={s} value={s} style={{background:"#1a1a1a"}}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"flex-end"}}>
+            <div style={{flex:1}}>
+              <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",marginBottom:6,letterSpacing:0.5,textTransform:"uppercase"}}>Seed</label>
+              <input type="number" value={sdConfig.seed} onChange={e=>upd("seed",Number(e.target.value))}
+                style={{
+                  width:"100%", padding:"8px 10px",
+                  background:"rgba(255,255,255,0.04)",
+                  border:"1px solid rgba(255,255,255,0.08)",
+                  borderRadius:8, color:"#e8e4df", fontSize:13, outline:"none", boxSizing:"border-box",
+                }}/>
+            </div>
+            <button onClick={()=>upd("seed",-1)} style={{
+              padding:"8px 12px", border:"1px solid rgba(255,255,255,0.1)",
+              borderRadius:8, background:"rgba(255,255,255,0.04)",
+              color:"rgba(255,255,255,0.5)", cursor:"pointer", fontSize:12, whiteSpace:"nowrap",
+            }}>Aleatorio</button>
+          </div>
+          {sdModels.length>0 && (
+            <div>
+              <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",marginBottom:6,letterSpacing:0.5,textTransform:"uppercase"}}>Modelo</label>
+              <select value={sdConfig.model} onChange={e=>upd("model",e.target.value)}
+                style={{
+                  width:"100%", padding:"8px 10px",
+                  background:"#1a1a1a", border:"1px solid rgba(255,255,255,0.08)",
+                  borderRadius:8, color:"#e8e4df", fontSize:12, outline:"none",
+                }}>
+                <option value="" style={{background:"#1a1a1a"}}>— Modelo actual de SD —</option>
+                {sdModels.map(m=><option key={m} value={m} style={{background:"#1a1a1a"}}>{m}</option>)}
+              </select>
+            </div>
+          )}
+          <button onClick={onFetchModels} style={{
+            padding:"6px 12px", border:"1px solid rgba(255,255,255,0.1)",
+            borderRadius:6, background:"rgba(255,255,255,0.03)",
+            color:"rgba(255,255,255,0.4)", cursor:"pointer", fontSize:11,
+          }}>↻ Cargar modelos, samplers y LoRAs desde SD</button>
+
+          {/* Model recommendation */}
+          <div style={{
+            padding:"10px 12px", borderRadius:8,
+            background:"rgba(168,85,247,0.06)", border:"1px solid rgba(168,85,247,0.2)",
+            fontSize:11, color:"rgba(200,180,230,0.7)", lineHeight:1.6,
+          }}>
+            💡 {MODEL_TIPS}
+          </div>
+        </>
+      )}
+
+      {/* Size presets */}
+      <div>
+        <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",marginBottom:8,letterSpacing:0.5,textTransform:"uppercase"}}>Resolución (vertical)</label>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5}}>
+          {SIZE_PRESETS.map(sz=>{
+            const active = sdConfig.width===sz.w && sdConfig.height===sz.h;
+            return (
+              <button key={sz.label} onClick={()=>setSdConfig(p=>({...p,width:sz.w,height:sz.h}))} style={{
+                padding:"7px 2px", border:"1px solid",
+                borderColor:active ? "rgba(231,76,60,0.5)" : "rgba(255,255,255,0.07)",
+                borderRadius:7,
+                background:active ? "rgba(231,76,60,0.12)" : "rgba(255,255,255,0.02)",
+                color:active ? "#e74c3c" : "rgba(255,255,255,0.45)",
+                cursor:"pointer", fontSize:10, fontWeight:active ? 700 : 400,
+                transition:"all 0.15s",
+              }}>{sz.label}</button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* API hint (basic mode) */}
+      {sdConfig.mode==="basic" && (
+        <div style={{fontSize:10,color:"rgba(255,255,255,0.18)",lineHeight:1.6}}>
+          Conecta a <span style={{color:"rgba(255,255,255,0.35)"}}>{sdConfig.url}</span><br/>
+          SD debe correr con: <code style={{color:"rgba(255,200,100,0.45)"}}>--api --cors-allow-origins=*</code>
+        </div>
+      )}
+
+      {/* Generate button */}
+      <button onClick={onGenerate} disabled={sdGenerating} style={{
+        padding:"11px", border:"none", borderRadius:8,
+        background:sdGenerating ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#6d28d9,#a855f7)",
+        color:"#fff", fontSize:14, fontWeight:600, cursor:sdGenerating ? "wait" : "pointer",
+        letterSpacing:0.5,
+        boxShadow:sdGenerating ? "none" : "0 2px 10px rgba(109,40,217,0.4)",
+        transition:"all 0.2s",
+      }}>
+        {sdGenerating ? "Generando..." : "✦  Generar imagen"}
+      </button>
+
+      {/* Error */}
+      {sdError && (
+        <div style={{
+          padding:"10px 14px", borderRadius:8,
+          background: sdError.startsWith("⚠") ? "rgba(234,179,8,0.08)" : "rgba(192,57,43,0.1)",
+          border: sdError.startsWith("⚠") ? "1px solid rgba(234,179,8,0.3)" : "1px solid rgba(192,57,43,0.3)",
+          fontSize:12,
+          color: sdError.startsWith("⚠") ? "#fbbf24" : "#e87060",
+          lineHeight:1.6, whiteSpace:"pre-line",
+        }}>
+          {sdError}
+        </div>
+      )}
+
+      {/* Generated preview */}
+      {sdPreview && !sdError && (
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          <div style={{borderRadius:10,overflow:"hidden",border:"1px solid rgba(255,255,255,0.1)"}}>
+            <img src={sdPreview} alt="Generado" style={{width:"100%",display:"block"}}/>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={onUseAsArt} style={{
+              flex:1, padding:"9px", border:"none", borderRadius:8,
+              background:"linear-gradient(135deg,#c0392b,#e74c3c)",
+              color:"#fff", fontSize:13, fontWeight:600, cursor:"pointer",
+              boxShadow:"0 2px 6px rgba(192,57,43,0.4)",
+            }}>
+              Usar como arte de la carta
+            </button>
+            <button onClick={onGenerate} disabled={sdGenerating} title="Regenerar" style={{
+              padding:"9px 14px", border:"1px solid rgba(109,40,217,0.35)",
+              borderRadius:8, background:"rgba(109,40,217,0.1)",
+              color:"#a78bfa", cursor:sdGenerating ? "wait" : "pointer", fontSize:16,
+            }}>↻</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
