@@ -3,6 +3,16 @@ import { toPng } from "html-to-image";
 
 const ALL_MANA = ["W","U","B","R","G","C","X","0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"];
 
+const DEFAULT_MANA_IMAGES = {
+  W: "/symbols/W.png",
+  U: "/symbols/U.png",
+  B: "/symbols/B.png",
+  R: "/symbols/R.png",
+  G: "/symbols/G.png",
+  C: "/symbols/C.png",
+  T: "/symbols/T.png",
+};
+
 const MANA_BG = {
   W:"#F9F5E3",U:"#0E68AB",B:"#2B2522",R:"#D3202A",G:"#00733E",
   C:"#CAC5C0",X:"#CAC5C0",
@@ -64,11 +74,12 @@ function ManaIcon({symbol,s}){
 
 /* ── Single mana pip ── */
 function ManaSymbol({symbol,size=22,customImages}){
-  const customImg = customImages?.[symbol];
+  // Priority: customImages → DEFAULT_MANA_IMAGES → SVG
+  const resolvedImg = customImages?.[symbol] ?? DEFAULT_MANA_IMAGES[symbol] ?? null;
   const isColorIcon = ["W","U","B","R","G"].includes(symbol);
   const isColorless = symbol==="C" || symbol==="1";
 
-  if(customImg){
+  if(resolvedImg){
     return (
       <span style={{
         display:"inline-flex",alignItems:"center",justifyContent:"center",
@@ -77,7 +88,7 @@ function ManaSymbol({symbol,size=22,customImages}){
         boxShadow:"0 1px 3px rgba(0,0,0,0.5), inset 0 1px 1px rgba(255,255,255,0.25)",
         flexShrink:0,overflow:"hidden",
       }}>
-        <img src={customImg} alt={symbol} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+        <img src={resolvedImg} alt={symbol} style={{width:"100%",height:"100%",objectFit:"cover"}}/>
       </span>
     );
   }
@@ -178,23 +189,8 @@ function parseLine(line,customImages){
           </span>
         );
         if(p.type==="tap") return (
-          <span key={i} style={{
-            display:"inline-flex",verticalAlign:"middle",margin:"0 1px",
-            width:17,height:17,borderRadius:"50%",
-            backgroundColor: customImages?.T ? "transparent" : "#CAC5C0",
-            alignItems:"center",justifyContent:"center",
-            border:"1.5px solid rgba(0,0,0,0.35)",
-            boxShadow:"0 1px 2px rgba(0,0,0,0.4)",
-            overflow:"hidden",
-          }}>
-            {customImages?.T ? (
-              <img src={customImages.T} alt="T" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
-            ) : (
-              <svg width={11} height={11} viewBox="0 0 12 12">
-                <path d="M6,1 L6,6 L10,8" fill="none" stroke="#111" strokeWidth="1.8" strokeLinecap="round"/>
-                <circle cx="6" cy="6" r="5" fill="none" stroke="#111" strokeWidth="1"/>
-              </svg>
-            )}
+          <span key={i} style={{display:"inline-flex",verticalAlign:"middle",margin:"0 1px"}}>
+            <ManaSymbol symbol="T" size={17} customImages={customImages}/>
           </span>
         );
         return <span key={i}>{p.value}</span>;
@@ -880,33 +876,36 @@ export default function MTGProxyGenerator(){
 function ManaImageRow({symbol,customImg,onUpload,onRemove,customImages}){
   const ref=useRef(null);
   const LABELS={W:"Blanco (W)",U:"Azul (U)",B:"Negro (B)",R:"Rojo (R)",G:"Verde (G)",C:"Incoloro (C)",X:"Variable (X)",T:"Tap (T)"};
+  const hasDefault = !!DEFAULT_MANA_IMAGES[symbol];
+  const isCustom = !!customImg;
+  const statusLabel = isCustom ? "Custom" : hasDefault ? "Default" : "SVG";
+  const statusColor = isCustom ? "#e74c3c" : hasDefault ? "#3aaf70" : "rgba(255,255,255,0.25)";
+
   return (
     <div style={{
       display:"flex", alignItems:"center", gap:10,
       padding:"8px 10px", borderRadius:8,
-      background:"rgba(255,255,255,0.02)",
-      border:"1px solid rgba(255,255,255,0.05)",
+      background: isCustom ? "rgba(231,76,60,0.04)" : "rgba(255,255,255,0.02)",
+      border: isCustom ? "1px solid rgba(231,76,60,0.2)" : "1px solid rgba(255,255,255,0.05)",
     }}>
       <ManaSymbol symbol={symbol} size={30} customImages={customImages}/>
       <div style={{flex:1}}>
         <div style={{fontSize:13,color:"rgba(255,255,255,0.7)"}}>{LABELS[symbol]||symbol}</div>
-        {customImg && (
-          <div style={{fontSize:10,color:"rgba(231,76,60,0.7)"}}>Custom cargado</div>
-        )}
+        <div style={{fontSize:10,color:statusColor,marginTop:1}}>{statusLabel}</div>
       </div>
       <button onClick={()=>ref.current?.click()} style={{
         padding:"5px 12px", border:"1px solid rgba(255,255,255,0.1)",
         borderRadius:6, background:"rgba(255,255,255,0.05)",
         color:"rgba(255,255,255,0.5)", cursor:"pointer", fontSize:11,
       }}>
-        {customImg ? "Cambiar" : "Subir"}
+        {isCustom ? "Cambiar" : "Subir"}
       </button>
-      {customImg && (
-        <button onClick={onRemove} style={{
+      {isCustom && (
+        <button onClick={onRemove} title="Restaurar predeterminado" style={{
           padding:"5px 8px", border:"1px solid rgba(192,57,43,0.3)",
           borderRadius:6, background:"rgba(192,57,43,0.1)",
           color:"#e74c3c", cursor:"pointer", fontSize:11,
-        }}>✕</button>
+        }}>↩</button>
       )}
       <input ref={ref} type="file" accept="image/*" onChange={onUpload} style={{display:"none"}}/>
     </div>
