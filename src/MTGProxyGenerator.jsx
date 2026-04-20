@@ -286,10 +286,12 @@ const MTG_STYLE_PRESETS = [
 ];
 
 const SIZE_PRESETS = [
-  { label:"512×768",  w:512,  h:768  },
-  { label:"640×960",  w:640,  h:960  },
-  { label:"768×1152", w:768,  h:1152 },
-  { label:"832×1216", w:832,  h:1216 },
+  { label:"512×512",  w:512,  h:512,  orient:"square"    },
+  { label:"768×512",  w:768,  h:512,  orient:"landscape" },
+  { label:"960×640",  w:960,  h:640,  orient:"landscape" },
+  { label:"1024×576", w:1024, h:576,  orient:"landscape" },
+  { label:"512×768",  w:512,  h:768,  orient:"portrait"  },
+  { label:"640×960",  w:640,  h:960,  orient:"portrait"  },
 ];
 
 const DEFAULT_SAMPLERS = ["DPM++ 2M","DPM++ SDE","DPM++ 2M SDE","DPM++ 3M SDE","Euler a","Euler","DDIM","UniPC","LCM","Restart"];
@@ -483,15 +485,23 @@ export default function MTGProxyGenerator(){
     steps:30, cfg:7,
     sampler:"DPM++ 2M",
     seed:-1,
-    width:512, height:768,
+    width:768, height:512,
+    clipSkip:1,
     model:"",
     activeLoras:[], // [{name, weight}]
+    hiresEnabled:false,
+    hiresSteps:20,
+    hiresDenoise:0.5,
+    hiresUpscaler:"Latent",
+    hiresWidth:1024,
+    hiresHeight:1024,
   });
   const [sdGenerating,setSdGenerating] = useState(false);
   const [sdError,setSdError] = useState("");
   const [sdModels,setSdModels] = useState([]);
   const [sdSamplers,setSdSamplers] = useState(DEFAULT_SAMPLERS);
   const [sdLoras,setSdLoras] = useState([]);
+  const [sdUpscalers,setSdUpscalers] = useState(["Latent","Latent (bicubic)","Latent (nearest)","ESRGAN_4x","R-ESRGAN 4x+","R-ESRGAN 4x+ Anime6B"]);
   const [sdPreview,setSdPreview] = useState(null);
   const fileInputRef = useRef(null);
   const cardRef = useRef(null);
@@ -572,10 +582,11 @@ export default function MTGProxyGenerator(){
     // LoRA syntax appended to positive prompt
     const loraStr = (sdConfig.activeLoras||[]).map(l=>`<lora:${l.name}:${l.weight}>`).join(", ");
 
-    // Positive: quality prefix + user prompt + style preset + loras
-    const fullPrompt = [QUALITY_PREFIX, sdConfig.prompt, preset?.prompt, loraStr].filter(Boolean).join(", ");
+    // Positive: quality prefix + user prompt + (preset only in basic mode) + loras
+    const presetPrompt = sdConfig.mode==="basic" ? preset?.prompt : "";
+    const fullPrompt = [QUALITY_PREFIX, sdConfig.prompt, presetPrompt, loraStr].filter(Boolean).join(", ");
 
-    // Negative: universal base always included, then preset-specific or user-edited
+    // Negative: universal base always included, then preset-specific (basic) or user-edited (advanced)
     const extraNeg = sdConfig.mode==="advanced"
       ? sdConfig.negativePrompt
       : (preset?.negative || "");
@@ -595,7 +606,19 @@ export default function MTGProxyGenerator(){
           width:sdConfig.width,
           height:sdConfig.height,
           batch_size:1,
-          ...(sdConfig.model ? {override_settings:{sd_model_checkpoint:sdConfig.model}} : {}),
+          override_settings:{
+            ...(sdConfig.model ? {sd_model_checkpoint:sdConfig.model} : {}),
+            ...(sdConfig.clipSkip > 1 ? {CLIP_stop_at_last_layers:sdConfig.clipSkip} : {}),
+          },
+          ...(sdConfig.hiresEnabled ? {
+            enable_hr:true,
+            hr_steps:sdConfig.hiresSteps,
+            denoising_strength:sdConfig.hiresDenoise,
+            hr_upscaler:sdConfig.hiresUpscaler,
+            hr_resize_x:sdConfig.hiresWidth,
+            hr_resize_y:sdConfig.hiresHeight,
+            hr_additional_modules:[], // explicit empty array fixes Forge NoneType bug
+          } : {}),
         }),
       });
       if(!res.ok){
@@ -626,10 +649,11 @@ export default function MTGProxyGenerator(){
     try {
       // Refresh LoRA list on SD side before fetching
       await fetch(`${sdConfig.url}/sdapi/v1/refresh-loras`,{method:"POST"}).catch(()=>{});
-      const [modRes,sampRes,loraRes] = await Promise.all([
+      const [modRes,sampRes,loraRes,upscalerRes] = await Promise.all([
         fetch(`${sdConfig.url}/sdapi/v1/sd-models`),
         fetch(`${sdConfig.url}/sdapi/v1/samplers`),
         fetch(`${sdConfig.url}/sdapi/v1/loras`),
+        fetch(`${sdConfig.url}/sdapi/v1/upscalers`),
       ]);
       const models = await modRes.json();
       const samplers = await sampRes.json();
@@ -638,6 +662,10 @@ export default function MTGProxyGenerator(){
       if(loraRes.ok){
         const loras = await loraRes.json();
         setSdLoras(loras.map(l=>l.name||l.alias||"").filter(Boolean));
+      }
+      if(upscalerRes.ok){
+        const upscalers = await upscalerRes.json();
+        setSdUpscalers(upscalers.map(u=>u.name).filter(Boolean));
       }
     } catch{
       setSdError("No se pudo conectar a SD para cargar modelos");
@@ -949,6 +977,7 @@ export default function MTGProxyGenerator(){
                     sdModels={sdModels}
                     sdSamplers={sdSamplers}
                     sdLoras={sdLoras}
+                    sdUpscalers={sdUpscalers}
                     onGenerate={generateWithSD}
                     onFetchModels={fetchSDModels}
                     onUseAsArt={()=>{
@@ -1176,7 +1205,7 @@ function SDPingButton({url}){
 }
 
 /* ── Stable Diffusion generation panel ── */
-function SDGeneratePanel({sdConfig,setSdConfig,sdGenerating,sdError,sdPreview,sdModels,sdSamplers,sdLoras,onGenerate,onUseAsArt,onFetchModels}){
+function SDGeneratePanel({sdConfig,setSdConfig,sdGenerating,sdError,sdPreview,sdModels,sdSamplers,sdLoras,sdUpscalers,onGenerate,onUseAsArt,onFetchModels}){
   const upd = (k,v) => setSdConfig(prev=>({...prev,[k]:v}));
   const preset = MTG_STYLE_PRESETS.find(p=>p.id===sdConfig.preset);
 
@@ -1224,7 +1253,8 @@ function SDGeneratePanel({sdConfig,setSdConfig,sdGenerating,sdError,sdPreview,sd
         )}
       </div>
 
-      {/* Style presets */}
+      {/* Style presets — basic mode only */}
+      {sdConfig.mode==="basic" && (
       <div>
         <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",letterSpacing:0.5,textTransform:"uppercase",marginBottom:8}}>Estilo predefinido</div>
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5}}>
@@ -1250,9 +1280,10 @@ function SDGeneratePanel({sdConfig,setSdConfig,sdGenerating,sdError,sdPreview,sd
           </div>
         )}
       </div>
+      )}
 
-      {/* Artist references */}
-      {ARTIST_REFS[sdConfig.preset] && (
+      {/* Artist references — basic mode only */}
+      {sdConfig.mode==="basic" && ARTIST_REFS[sdConfig.preset] && (
         <div>
           <div style={{fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",letterSpacing:0.5,textTransform:"uppercase",marginBottom:6}}>
             Artista de referencia <span style={{fontWeight:400,textTransform:"none",letterSpacing:0,color:"rgba(255,255,255,0.2)"}}> — click para agregar al prompt</span>
@@ -1393,9 +1424,10 @@ function SDGeneratePanel({sdConfig,setSdConfig,sdGenerating,sdError,sdPreview,sd
               onFocus={e=>e.target.style.borderColor="rgba(231,76,60,0.4)"}
               onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12}}>
             <SliderField label="Steps" value={sdConfig.steps} onChange={v=>upd("steps",v)} min={5} max={60} suffix=""/>
             <SliderField label="CFG Scale" value={sdConfig.cfg} onChange={v=>upd("cfg",v)} min={1} max={20} suffix=""/>
+            <SliderField label="Clip Skip" value={sdConfig.clipSkip} onChange={v=>upd("clipSkip",v)} min={1} max={4} suffix=""/>
           </div>
           <div>
             <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",marginBottom:6,letterSpacing:0.5,textTransform:"uppercase"}}>Sampler</label>
@@ -1425,6 +1457,49 @@ function SDGeneratePanel({sdConfig,setSdConfig,sdGenerating,sdError,sdPreview,sd
               color:"rgba(255,255,255,0.5)", cursor:"pointer", fontSize:12, whiteSpace:"nowrap",
             }}>Aleatorio</button>
           </div>
+          {/* Hires.fix */}
+          <div style={{
+            padding:"10px 12px", borderRadius:8,
+            background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.08)",
+          }}>
+            <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",marginBottom: sdConfig.hiresEnabled ? 12 : 0}}>
+              <input type="checkbox" checked={sdConfig.hiresEnabled}
+                onChange={e=>upd("hiresEnabled",e.target.checked)}
+                style={{accentColor:"#e74c3c"}}/>
+              <span style={{fontSize:12,fontWeight:600,color:"rgba(255,255,255,0.6)"}}>Hires.fix</span>
+              <span style={{fontSize:10,color:"rgba(255,255,255,0.25)"}}>— escalar tras generar</span>
+            </label>
+            {sdConfig.hiresEnabled && (
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <div>
+                    <label style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.35)",marginBottom:4,letterSpacing:0.5,textTransform:"uppercase"}}>Ancho final</label>
+                    <input type="number" value={sdConfig.hiresWidth} onChange={e=>upd("hiresWidth",Number(e.target.value))}
+                      step={64} min={512} max={2048}
+                      style={{width:"100%",padding:"6px 8px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,color:"#e8e4df",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+                  </div>
+                  <div>
+                    <label style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.35)",marginBottom:4,letterSpacing:0.5,textTransform:"uppercase"}}>Alto final</label>
+                    <input type="number" value={sdConfig.hiresHeight} onChange={e=>upd("hiresHeight",Number(e.target.value))}
+                      step={64} min={512} max={2048}
+                      style={{width:"100%",padding:"6px 8px",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,color:"#e8e4df",fontSize:12,outline:"none",boxSizing:"border-box"}}/>
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                  <SliderField label="HR Steps" value={sdConfig.hiresSteps} onChange={v=>upd("hiresSteps",v)} min={5} max={40} suffix=""/>
+                  <SliderField label="Denoise" value={Math.round(sdConfig.hiresDenoise*100)} onChange={v=>upd("hiresDenoise",v/100)} min={1} max={100} suffix="%"/>
+                </div>
+                <div>
+                  <label style={{display:"block",fontSize:10,color:"rgba(255,255,255,0.35)",marginBottom:4,letterSpacing:0.5,textTransform:"uppercase"}}>Upscaler</label>
+                  <select value={sdConfig.hiresUpscaler} onChange={e=>upd("hiresUpscaler",e.target.value)}
+                    style={{width:"100%",padding:"6px 8px",background:"#1a1a1a",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,color:"#e8e4df",fontSize:12,outline:"none"}}>
+                    {sdUpscalers.map(u=><option key={u} value={u} style={{background:"#1a1a1a"}}>{u}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
           {sdModels.length>0 && (
             <div>
               <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",marginBottom:6,letterSpacing:0.5,textTransform:"uppercase"}}>Modelo</label>
@@ -1458,22 +1533,30 @@ function SDGeneratePanel({sdConfig,setSdConfig,sdGenerating,sdError,sdPreview,sd
 
       {/* Size presets */}
       <div>
-        <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",marginBottom:8,letterSpacing:0.5,textTransform:"uppercase"}}>Resolución (vertical)</label>
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5}}>
+        <label style={{display:"block",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",marginBottom:8,letterSpacing:0.5,textTransform:"uppercase"}}>Resolución</label>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:5}}>
           {SIZE_PRESETS.map(sz=>{
             const active = sdConfig.width===sz.w && sdConfig.height===sz.h;
+            const orientIcon = sz.orient==="landscape" ? "⬜" : sz.orient==="portrait" ? "▭" : "□";
             return (
               <button key={sz.label} onClick={()=>setSdConfig(p=>({...p,width:sz.w,height:sz.h}))} style={{
-                padding:"7px 2px", border:"1px solid",
+                padding:"7px 4px", border:"1px solid",
                 borderColor:active ? "rgba(231,76,60,0.5)" : "rgba(255,255,255,0.07)",
                 borderRadius:7,
                 background:active ? "rgba(231,76,60,0.12)" : "rgba(255,255,255,0.02)",
                 color:active ? "#e74c3c" : "rgba(255,255,255,0.45)",
                 cursor:"pointer", fontSize:10, fontWeight:active ? 700 : 400,
                 transition:"all 0.15s",
-              }}>{sz.label}</button>
+                display:"flex", flexDirection:"column", alignItems:"center", gap:2,
+              }}>
+                <span style={{fontSize:13}}>{orientIcon}</span>
+                <span>{sz.label}</span>
+              </button>
             );
           })}
+        </div>
+        <div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginTop:6,lineHeight:1.5}}>
+          Horizontal reduce alucinaciones en SD 1.5 — recomendado para arte de carta.
         </div>
       </div>
 
