@@ -162,6 +162,21 @@ function RulesTextRender({text,customImages}){
   );
 }
 
+function parseFormatting(text, keyPrefix){
+  const regex = /(\*\*([^*]+)\*\*|\*([^*]+)\*|__([^_]+)__)/g;
+  const parts=[];
+  let last=0, m, idx=0;
+  while((m=regex.exec(text))!==null){
+    if(m.index>last) parts.push(<span key={`${keyPrefix}-t${idx++}`}>{text.slice(last,m.index)}</span>);
+    if(m[0].startsWith("**")) parts.push(<strong key={`${keyPrefix}-b${idx++}`}>{m[2]}</strong>);
+    else if(m[0].startsWith("*")) parts.push(<em key={`${keyPrefix}-i${idx++}`}>{m[3]}</em>);
+    else parts.push(<span key={`${keyPrefix}-u${idx++}`} style={{textDecoration:"underline"}}>{m[4]}</span>);
+    last=regex.lastIndex;
+  }
+  if(last<text.length) parts.push(<span key={`${keyPrefix}-t${idx++}`}>{text.slice(last)}</span>);
+  return parts;
+}
+
 function parseLine(line,customImages){
   const regex = /\{([^}]+)\}/g;
   const parts=[];
@@ -193,7 +208,7 @@ function parseLine(line,customImages){
             <ManaSymbol symbol="T" size={17} customImages={customImages}/>
           </span>
         );
-        return <span key={i}>{p.value}</span>;
+        return <span key={i}>{parseFormatting(p.value, `pl${i}`)}</span>;
       })}
     </span>
   );
@@ -309,9 +324,19 @@ const ARTIST_REFS = {
 /* ── Recommended models note ── */
 const MODEL_TIPS = "Para mejores resultados instala en SD un modelo especializado en ilustración fantasy: DreamShaper, Deliberate, ReV Animated o epiCRealism (disponibles en civitai.com). Los modelos SD 1.5 genéricos producen alucinaciones frecuentes.";
 
+/* ── Dynamic overlay gradient based on start, transition width and intensity ── */
+function getOverlayGradient(start=20, intensity=1, transition=50){
+  const s = Math.min(Math.max(start, 0), 95);
+  const t = Math.min(Math.max(transition, 2), 100);
+  const d = Math.min(Math.max(intensity, 0), 1);
+  const c = (a) => `rgba(0,0,0,${Math.min(a*d,1).toFixed(2)})`;
+  const p = (frac) => Math.min(s + frac * t, 100).toFixed(1);
+  return `linear-gradient(to bottom, transparent 0%, transparent ${s}%, ${c(0.15)} ${p(0.15)}%, ${c(0.45)} ${p(0.35)}%, ${c(0.72)} ${p(0.55)}%, ${c(0.90)} ${p(0.75)}%, ${c(0.97)} ${p(0.90)}%, ${c(1)} ${p(1)}%)`;
+}
+
 /* ══════════════════════ CARD PREVIEW ══════════════════════ */
 function CardPreview({cardData,artImage,artPosition,customImages,exporting=false,showProxyLabel=true}){
-  const{name,typeLine,rulesText,flavorText,power,toughness,manaCost,isCreature,artistName}=cardData;
+  const{name,typeLine,rulesText,flavorText,power,toughness,manaCost,isCreature,artistName,hasRulesText,rulesJustify}=cardData;
 
   return (
     <div style={{
@@ -349,8 +374,7 @@ function CardPreview({cardData,artImage,artPosition,customImages,exporting=false
       {/* Gradient overlay — edge to edge like art */}
       <div style={{
         position:"absolute",bottom:0,left:0,right:0,height:"100%",
-        background:"linear-gradient(to bottom, transparent 0%, transparent 20%, rgba(0,0,0,0.1) 35%, rgba(0,0,0,0.4) 48%, rgba(0,0,0,0.7) 58%, rgba(0,0,0,0.9) 68%, rgba(0,0,0,0.97) 78%, #000 90%)",
-        opacity: artPosition.overlayOpacity ?? 1,
+        background:getOverlayGradient(artPosition.overlayStart ?? 20, artPosition.overlayOpacity ?? 1, artPosition.overlayTransition ?? 50),
         pointerEvents:"none",
       }}/>
 
@@ -396,12 +420,14 @@ function CardPreview({cardData,artImage,artPosition,customImages,exporting=false
         }}/>
 
         {/* Rules text */}
+        {hasRulesText !== false && (
         <div style={{maxHeight:200, overflow:"hidden"}}>
           <div style={{
             fontSize:16, color:"#f0ede8", lineHeight:1.55,
             textShadow:"0 1px 3px rgba(0,0,0,0.8)",
+            textAlign: rulesJustify ? "justify" : "left",
           }}>
-            <RulesTextRender text={rulesText || "Rules text goes here."} customImages={customImages}/>
+            <RulesTextRender text={rulesText||""} customImages={customImages}/>
           </div>
           {flavorText && (
             <div style={{
@@ -413,6 +439,7 @@ function CardPreview({cardData,artImage,artPosition,customImages,exporting=false
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* P/T — inset by bleed */}
@@ -461,10 +488,12 @@ export default function MTGProxyGenerator(){
     manaCost:["1","R"],
     isCreature:true,
     artistName:"",
+    hasRulesText:true,
+    rulesJustify:false,
   });
 
   const [artImage,setArtImage] = useState(null);
-  const [artPosition,setArtPosition] = useState({x:50,y:50,zoom:1.5,overlayOpacity:1,brightness:105,contrast:105,saturate:110,sharpness:0});
+  const [artPosition,setArtPosition] = useState({x:50,y:50,zoom:1.5,overlayOpacity:1,overlayStart:20,overlayTransition:50,brightness:105,contrast:105,saturate:110,sharpness:0});
   const [manaInput,setManaInput] = useState("1, R");
   const [activeTab,setActiveTab] = useState("text");
   const [customImages,setCustomImages] = useState({});
@@ -507,6 +536,23 @@ export default function MTGProxyGenerator(){
   const cardRef = useRef(null);
   const exportRef = useRef(null);
   const searchTimeout = useRef(null);
+  const rulesTextareaRef = useRef(null);
+
+  const wrapSelection = (before, after) => {
+    const el = rulesTextareaRef.current;
+    if(!el) return;
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    const text = cardData.rulesText;
+    const selected = text.slice(start, end);
+    const newText = text.slice(0, start) + before + selected + after + text.slice(end);
+    updateField("rulesText", newText);
+    setTimeout(() => {
+      el.selectionStart = start + before.length;
+      el.selectionEnd = end + before.length;
+      el.focus();
+    }, 0);
+  };
 
   const saveCard = async ()=>{
     setExporting(true);
@@ -865,11 +911,58 @@ export default function MTGProxyGenerator(){
                 <Field label="Línea de tipo" value={cardData.typeLine}
                   onChange={v=>updateField("typeLine",v)}/>
                 <div>
-                  <Field label="Texto de reglas" value={cardData.rulesText}
-                    onChange={v=>updateField("rulesText",v)} multiline rows={6}/>
-                  <div style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:6,lineHeight:1.5}}>
-                    Usa <b style={{color:"rgba(255,255,255,0.5)"}}>{"{W} {U} {B} {R} {G} {2} {T}"}</b> para insertar símbolos inline. Los saltos de línea se respetan.
+                  {/* Rules text toggle + justify */}
+                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
+                    <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",letterSpacing:0.5,textTransform:"uppercase"}}>
+                      <input type="checkbox" checked={cardData.hasRulesText!==false}
+                        onChange={e=>updateField("hasRulesText",e.target.checked)}
+                        style={{accentColor:"#e74c3c"}}/>
+                      Texto de reglas
+                    </label>
+                    {cardData.hasRulesText!==false && (
+                      <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:11,color:"rgba(255,255,255,0.3)"}}>
+                        <input type="checkbox" checked={!!cardData.rulesJustify}
+                          onChange={e=>updateField("rulesJustify",e.target.checked)}
+                          style={{accentColor:"#e74c3c"}}/>
+                        Justificado
+                      </label>
+                    )}
                   </div>
+                  {cardData.hasRulesText!==false && (<>
+                    {/* Formatting toolbar */}
+                    <div style={{display:"flex",gap:4,marginBottom:6}}>
+                      {[["B","**","**","bold"],["I","*","*","italic"],["U","__","__","underline"]].map(([lbl,before,after,title])=>(
+                        <button key={lbl} title={title} onClick={()=>wrapSelection(before,after)} style={{
+                          width:28,height:26,border:"1px solid rgba(255,255,255,0.1)",
+                          borderRadius:5,background:"rgba(255,255,255,0.04)",
+                          color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:12,
+                          fontWeight:lbl==="B"?"700":"400",
+                          fontStyle:lbl==="I"?"italic":"normal",
+                          textDecoration:lbl==="U"?"underline":"none",
+                        }}>{lbl}</button>
+                      ))}
+                      <div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginLeft:4,alignSelf:"center"}}>
+                        Selecciona texto y pulsa
+                      </div>
+                    </div>
+                    <textarea ref={rulesTextareaRef} value={cardData.rulesText}
+                      onChange={e=>updateField("rulesText",e.target.value)}
+                      rows={6} placeholder="Texto de reglas..."
+                      style={{
+                        width:"100%",padding:"10px 14px",
+                        background:"rgba(255,255,255,0.04)",
+                        border:"1px solid rgba(255,255,255,0.08)",
+                        borderRadius:8,color:"#e8e4df",
+                        fontSize:14,fontFamily:"inherit",
+                        outline:"none",resize:"vertical",boxSizing:"border-box",
+                        transition:"border-color 0.2s",
+                      }}
+                      onFocus={e=>e.target.style.borderColor="rgba(231,76,60,0.4)"}
+                      onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/>
+                    <div style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:6,lineHeight:1.5}}>
+                      Usa <b style={{color:"rgba(255,255,255,0.5)"}}>{"{W} {U} {B} {R} {G} {2} {T}"}</b> para símbolos · <b style={{color:"rgba(255,255,255,0.5)"}}>**negrita**</b> · <b style={{color:"rgba(255,255,255,0.5)"}}>*cursiva*</b> · <b style={{color:"rgba(255,255,255,0.5)"}}>__subrayado__</b>
+                    </div>
+                  </>)}
                 </div>
                 <Field label="Texto de ambientación (itálica)" value={cardData.flavorText}
                   onChange={v=>updateField("flavorText",v)} multiline rows={2}/>
@@ -944,7 +1037,11 @@ export default function MTGProxyGenerator(){
                         <SliderField label="Posición vertical" value={artPosition.y}
                           onChange={v=>setArtPosition(p=>({...p,y:v}))} min={0} max={100}/>
                         <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"4px 0"}}/>
-                        <SliderField label="Oscurecido inferior" value={Math.round(artPosition.overlayOpacity*100)}
+                        <SliderField label="Inicio del oscurecido" value={artPosition.overlayStart ?? 20}
+                          onChange={v=>setArtPosition(p=>({...p,overlayStart:v}))} min={0} max={85} suffix="%"/>
+                        <SliderField label="Zona de transición" value={artPosition.overlayTransition ?? 50}
+                          onChange={v=>setArtPosition(p=>({...p,overlayTransition:v}))} min={2} max={80} suffix="%"/>
+                        <SliderField label="Intensidad del oscurecido" value={Math.round(artPosition.overlayOpacity*100)}
                           onChange={v=>setArtPosition(p=>({...p,overlayOpacity:v/100}))} min={0} max={100} suffix="%"/>
                         <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"4px 0"}}/>
                         <SliderField label="Brillo" value={artPosition.brightness}
@@ -953,7 +1050,7 @@ export default function MTGProxyGenerator(){
                           onChange={v=>setArtPosition(p=>({...p,contrast:v}))} min={50} max={200} suffix="%"/>
                         <SliderField label="Saturación" value={artPosition.saturate}
                           onChange={v=>setArtPosition(p=>({...p,saturate:v}))} min={0} max={300} suffix="%"/>
-                        <button onClick={()=>{setArtImage(null);setArtPosition({x:50,y:50,zoom:1.5,overlayOpacity:1,brightness:105,contrast:105,saturate:110,sharpness:0});}}
+                        <button onClick={()=>{setArtImage(null);setArtPosition({x:50,y:50,zoom:1.5,overlayOpacity:1,overlayStart:20,overlayTransition:50,brightness:105,contrast:105,saturate:110,sharpness:0});}}
                           style={{
                             padding:"8px 16px", border:"1px solid rgba(255,255,255,0.1)",
                             borderRadius:8, background:"rgba(255,255,255,0.04)",
@@ -982,7 +1079,7 @@ export default function MTGProxyGenerator(){
                     onFetchModels={fetchSDModels}
                     onUseAsArt={()=>{
                       setArtImage(sdPreview);
-                      setArtPosition({x:50,y:50,zoom:1.5,overlayOpacity:1,brightness:105,contrast:105,saturate:110,sharpness:0});
+                      setArtPosition({x:50,y:50,zoom:1.5,overlayOpacity:1,overlayStart:20,overlayTransition:50,brightness:105,contrast:105,saturate:110,sharpness:0});
                       setArtSubTab("upload");
                     }}
                   />
