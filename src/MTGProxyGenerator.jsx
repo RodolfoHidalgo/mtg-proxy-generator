@@ -164,14 +164,15 @@ function RulesTextRender({text,customImages}){
 }
 
 function parseFormatting(text, keyPrefix){
-  const regex = /(\*\*([^*]+)\*\*|\*([^*]+)\*|__([^_]+)__)/g;
+  // Order matters: *** before ** before * to avoid partial matches
+  const regex = /\*\*\*(.+?)\*\*\*|\*\*(.+?)\*\*|\*(.+?)\*/g;
   const parts=[];
   let last=0, m, idx=0;
   while((m=regex.exec(text))!==null){
     if(m.index>last) parts.push(<span key={`${keyPrefix}-t${idx++}`}>{text.slice(last,m.index)}</span>);
-    if(m[0].startsWith("**")) parts.push(<strong key={`${keyPrefix}-b${idx++}`}>{m[2]}</strong>);
-    else if(m[0].startsWith("*")) parts.push(<em key={`${keyPrefix}-i${idx++}`}>{m[3]}</em>);
-    else parts.push(<span key={`${keyPrefix}-u${idx++}`} style={{textDecoration:"underline"}}>{m[4]}</span>);
+    if(m[1]!==undefined)      parts.push(<strong key={`${keyPrefix}-bi${idx++}`}><em>{m[1]}</em></strong>);
+    else if(m[2]!==undefined) parts.push(<strong key={`${keyPrefix}-b${idx++}`}>{m[2]}</strong>);
+    else                      parts.push(<em key={`${keyPrefix}-i${idx++}`}>{m[3]}</em>);
     last=regex.lastIndex;
   }
   if(last<text.length) parts.push(<span key={`${keyPrefix}-t${idx++}`}>{text.slice(last)}</span>);
@@ -959,7 +960,7 @@ export default function MTGProxyGenerator(){
                   {cardData.hasRulesText!==false && (<>
                     {/* Formatting toolbar */}
                     <div style={{display:"flex",gap:4,marginBottom:6}}>
-                      {[["B","**","**","bold"],["I","*","*","italic"],["U","__","__","underline"]].map(([lbl,before,after,title])=>(
+                      {[["B","**","**","bold"],["I","*","*","italic"]].map(([lbl,before,after,title])=>(
                         <button key={lbl} title={title} onClick={()=>wrapSelection(before,after)} style={{
                           width:28,height:26,border:"1px solid rgba(255,255,255,0.1)",
                           borderRadius:5,background:"rgba(255,255,255,0.04)",
@@ -988,7 +989,7 @@ export default function MTGProxyGenerator(){
                       onFocus={e=>e.target.style.borderColor="rgba(231,76,60,0.4)"}
                       onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/>
                     <div style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:6,lineHeight:1.5}}>
-                      Usa <b style={{color:"rgba(255,255,255,0.5)"}}>{"{W} {U} {B} {R} {G} {2} {T}"}</b> para símbolos · <b style={{color:"rgba(255,255,255,0.5)"}}>**negrita**</b> · <b style={{color:"rgba(255,255,255,0.5)"}}>*cursiva*</b> · <b style={{color:"rgba(255,255,255,0.5)"}}>__subrayado__</b>
+                      Usa <b style={{color:"rgba(255,255,255,0.5)"}}>{"{W} {U} {B} {R} {G} {2} {T}"}</b> para símbolos · <b style={{color:"rgba(255,255,255,0.5)"}}>**negrita**</b> · <b style={{color:"rgba(255,255,255,0.5)"}}>*cursiva*</b>
                     </div>
                   </>)}
                 </div>
