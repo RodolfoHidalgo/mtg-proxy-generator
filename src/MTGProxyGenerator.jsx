@@ -74,8 +74,9 @@ function ManaIcon({symbol,s}){
 
 /* ── Single mana pip ── */
 function ManaSymbol({symbol,size=22,customImages}){
-  // Priority: customImages → DEFAULT_MANA_IMAGES → SVG
-  const resolvedImg = customImages?.[symbol] ?? DEFAULT_MANA_IMAGES[symbol] ?? null;
+  // "1" (one colorless) uses the C image — Priority: customImages → DEFAULT_MANA_IMAGES → SVG
+  const imgKey = symbol === "1" ? "C" : symbol;
+  const resolvedImg = customImages?.[imgKey] ?? DEFAULT_MANA_IMAGES[imgKey] ?? null;
   const isColorIcon = ["W","U","B","R","G"].includes(symbol);
   const isColorless = symbol==="C" || symbol==="1";
 
