@@ -336,7 +336,7 @@ function getOverlayGradient(start=20, intensity=1, transition=50){
 
 /* ══════════════════════ CARD PREVIEW ══════════════════════ */
 function CardPreview({cardData,artImage,artPosition,customImages,exporting=false,showProxyLabel=true}){
-  const{name,typeLine,rulesText,flavorText,power,toughness,manaCost,isCreature,artistName,hasRulesText,rulesJustify}=cardData;
+  const{name,typeLine,rulesText,flavorText,power,toughness,manaCost,isCreature,artistName,hasRulesText,rulesJustify,hasNickname,nickname}=cardData;
 
   return (
     <div style={{
@@ -391,15 +391,26 @@ function CardPreview({cardData,artImage,artPosition,customImages,exporting=false
           </div>
         )}
 
-        {/* Name */}
+        {/* Name / Nickname */}
         <div style={{
-          fontSize:28, fontWeight:700, color:"#fff",
+          fontSize: hasNickname && nickname ? 26 : 28, fontWeight:700, color:"#fff",
           textShadow:"0 2px 8px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,1)",
           letterSpacing:0.5, lineHeight:1.15,
           fontFamily:"'Palatino Linotype','Palatino',serif",
         }}>
-          {name || "Card Name"}
+          {hasNickname && nickname ? nickname : (name || "Card Name")}
         </div>
+        {hasNickname && nickname && (
+          <div style={{
+            fontSize:13, fontWeight:400, color:"rgba(255,255,255,0.5)",
+            textShadow:"0 1px 3px rgba(0,0,0,0.9)",
+            letterSpacing:0.3, lineHeight:1.2, marginTop:1,
+            fontFamily:"'Palatino Linotype','Palatino',serif",
+            fontStyle:"italic",
+          }}>
+            {name}
+          </div>
+        )}
 
         {/* Type line */}
         <div style={{
@@ -490,6 +501,8 @@ export default function MTGProxyGenerator(){
     artistName:"",
     hasRulesText:true,
     rulesJustify:false,
+    hasNickname:false,
+    nickname:"",
   });
 
   const [artImage,setArtImage] = useState(null);
@@ -908,6 +921,20 @@ export default function MTGProxyGenerator(){
 
                 <Field label="Nombre de la carta" value={cardData.name}
                   onChange={v=>updateField("name",v)}/>
+                <div>
+                  <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",marginBottom:8,
+                    fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",letterSpacing:0.5,textTransform:"uppercase"}}>
+                    <input type="checkbox" checked={!!cardData.hasNickname}
+                      onChange={e=>updateField("hasNickname",e.target.checked)}
+                      style={{accentColor:"#e74c3c"}}/>
+                    Nickname
+                  </label>
+                  {cardData.hasNickname && (
+                    <Field label="Nombre visible en la carta" value={cardData.nickname}
+                      onChange={v=>updateField("nickname",v)}
+                      placeholder="Ej: El Dragón de las Sombras"/>
+                  )}
+                </div>
                 <Field label="Línea de tipo" value={cardData.typeLine}
                   onChange={v=>updateField("typeLine",v)}/>
                 <div>
