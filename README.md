@@ -35,9 +35,23 @@ Local web app to create custom Magic: The Gathering proxy cards with AI art gene
 
 ---
 
-## Requirements
+## Installation
+
+Download the latest installer from [Releases](../../releases):
+
+- **`MTG Proxy Generator_x.x.x_x64-setup.exe`** — Windows installer (recommended)
+- **`MTG Proxy Generator_x.x.x_x64_en-US.msi`** — Windows MSI package
+
+No additional software required. The app runs standalone on Windows 10/11.
+
+> For AI art generation, Stable Diffusion WebUI Forge must be running separately — see [Stable Diffusion Setup](#stable-diffusion-setup) below.
+
+---
+
+## Requirements (for development)
 
 - [Node.js](https://nodejs.org/) 18+
+- [Rust](https://rustup.rs/) (for building the desktop app)
 - [Stable Diffusion WebUI Forge](https://github.com/lllyasviel/stable-diffusion-webui-forge) (optional, for AI art generation)
 
 ### Recommended SD Models (SD 1.5)
@@ -49,14 +63,17 @@ Local web app to create custom Magic: The Gathering proxy cards with AI art gene
 
 ---
 
-## Setup
+## Development Setup
 
 ```bash
 # Install dependencies
 npm install
 
-# Start development server
+# Start web dev server
 npm run dev
+
+# Start desktop app (Tauri)
+npm run tauri:dev
 ```
 
 Open [http://localhost:5173](http://localhost:5173)
@@ -92,10 +109,14 @@ Open [http://localhost:5173](http://localhost:5173)
 ## Build
 
 ```bash
+# Web only
 npm run build
+
+# Desktop installer (requires Rust)
+npm run tauri:build
 ```
 
-Output goes to `dist/`.
+Web output goes to `dist/`. Desktop installers go to `src-tauri/target/release/bundle/`.
 
 ---
 
