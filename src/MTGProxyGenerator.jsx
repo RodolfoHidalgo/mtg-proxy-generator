@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import { toPng } from "html-to-image";
+import { useApp } from "./AppContext";
 
 const ALL_MANA = ["W","U","B","R","G","C","X","WP","UP","BP","RP","GP","0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"];
 
@@ -499,6 +500,7 @@ function CardPreview({cardData,artImage,artPosition,customImages,exporting=false
 
 /* ══════════════════════ MAIN APP ══════════════════════ */
 export default function MTGProxyGenerator(){
+  const { theme, setTheme, lang, setLang, t } = useApp();
   const [cardData,setCardData] = useState({
     name:"Krark, the Thumbless",
     typeLine:"Legendary Creature — Goblin Wizard",
@@ -850,310 +852,302 @@ export default function MTGProxyGenerator(){
   };
 
   const tabs = [
-    {id:"text",label:"Textos"},
-    {id:"art",label:"Arte"},
-    {id:"stats",label:"Stats"},
-    {id:"symbols",label:"Símbolos"},
+    {id:"text", label:t("tab_text"), icon:(
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/>
+      </svg>)},
+    {id:"art", label:t("tab_art"), icon:(
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
+        <polyline points="21 15 16 10 5 21"/>
+      </svg>)},
+    {id:"stats", label:t("tab_stats"), icon:(
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+        <path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/>
+      </svg>)},
+    {id:"symbols", label:t("tab_symbols"), icon:(
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+        <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+      </svg>)},
   ];
 
   return (
-    <div style={{
-      minHeight:"100vh", background:"#0d0d0d", color:"#e8e4df",
+    <div data-theme={theme} style={{
+      minHeight:"100vh", background:"var(--bg)", color:"var(--text)",
       fontFamily:"'Segoe UI',system-ui,sans-serif",
       display:"flex", flexDirection:"column",
     }}>
       {/* Header */}
       <div style={{
-        padding:"16px 24px",
-        borderBottom:"1px solid rgba(255,255,255,0.06)",
-        display:"flex", alignItems:"center", gap:12,
-        background:"rgba(15,15,15,0.95)",
+        borderBottom:"1px solid var(--border)",
+        background:"var(--panel)",
+        boxShadow:"var(--shadow-sm)",
       }}>
+        {/* Gradient accent line */}
+        <div style={{height:3, background:"var(--header-accent)", opacity:0.85}}/>
+      <div style={{padding:"11px 20px", display:"flex", alignItems:"center", gap:12}}>
         <div style={{
-          width:32, height:32, borderRadius:8,
+          width:34, height:34, borderRadius:9,
           background:"linear-gradient(135deg,#c0392b,#e74c3c)",
           display:"flex", alignItems:"center", justifyContent:"center",
-          fontSize:16, fontWeight:700,
+          fontSize:17, fontWeight:800, flexShrink:0,
+          boxShadow:"var(--accent-glow)",
         }}>P</div>
-        <div>
-          <div style={{fontSize:16,fontWeight:600,letterSpacing:0.3}}>MTG Proxy Generator</div>
-          <div style={{fontSize:11,color:"rgba(255,255,255,0.35)"}}>Custom proxy cards</div>
+        <div style={{flex:1}}>
+          <div style={{fontSize:15,fontWeight:700,letterSpacing:0.2,color:"var(--text)"}}>MTG Proxy Generator</div>
+          <div style={{fontSize:11,color:"var(--text-3)",marginTop:1}}>{t("subtitle")}</div>
         </div>
+        {/* Controls: lang + theme */}
+        <div style={{display:"flex",alignItems:"center",gap:8}}>
+          <button onClick={()=>setLang(l=>l==="es"?"en":"es")} style={{
+            padding:"5px 10px", borderRadius:6, border:"1px solid var(--border-2)",
+            background:"var(--surface)", color:"var(--text-2)",
+            fontSize:11, fontWeight:700, cursor:"pointer", letterSpacing:0.5,
+            transition:"all 0.18s",
+          }}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--accent-border)";e.currentTarget.style.color="var(--accent)";}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border-2)";e.currentTarget.style.color="var(--text-2)";}}
+          >{lang==="es"?"ES":"EN"}</button>
+          <button onClick={()=>setTheme(t=>t==="dark"?"light":"dark")} title={theme==="dark"?t("theme_light"):t("theme_dark")} style={{
+            width:32, height:32, borderRadius:8, border:"1px solid var(--border-2)",
+            background:"var(--surface)", color:"var(--text-2)",
+            fontSize:16, cursor:"pointer", display:"flex", alignItems:"center", justifyContent:"center",
+            transition:"all 0.18s",
+          }}
+            onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--accent-border)";e.currentTarget.style.color="var(--accent)";}}
+            onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border-2)";e.currentTarget.style.color="var(--text-2)";}}
+          >{theme==="dark"?"☀":"🌙"}</button>
+        </div>
+      </div>
       </div>
 
       <div style={{flex:1, display:"flex", gap:0, flexDirection:"row", overflow:"hidden"}}>
         {/* Editor Panel */}
         <div style={{
           width:380, flexShrink:0,
-          borderRight:"1px solid rgba(255,255,255,0.06)",
+          borderRight:"1px solid var(--border)",
           display:"flex", flexDirection:"column", overflow:"hidden",
-          background:"#111",
+          background:"var(--panel)",
         }}>
           {/* Tabs */}
-          <div style={{display:"flex", borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-            {tabs.map(t=>(
-              <button key={t.id} onClick={()=>setActiveTab(t.id)} style={{
-                flex:1, padding:"12px 0", border:"none", cursor:"pointer",
-                background:activeTab===t.id ? "rgba(192,57,43,0.15)" : "transparent",
-                color:activeTab===t.id ? "#e74c3c" : "rgba(255,255,255,0.4)",
-                fontSize:12, fontWeight:600, letterSpacing:0.5,
-                borderBottom:activeTab===t.id ? "2px solid #e74c3c" : "2px solid transparent",
-                transition:"all 0.2s",
-              }}>{t.label}</button>
+          <div style={{display:"flex", borderBottom:"1px solid var(--border)", background:"var(--panel)"}}>
+            {tabs.map((tab, i)=>(
+              <div key={tab.id} style={{display:"contents"}}>
+                {i > 0 && <div style={{width:1, background:"var(--border)", flexShrink:0}}/>}
+                <button onClick={()=>setActiveTab(tab.id)} style={{
+                  flex:1, padding:"13px 6px 11px", border:"none", cursor:"pointer",
+                  background: activeTab===tab.id ? "var(--accent-bg)" : "transparent",
+                  color: activeTab===tab.id ? "var(--accent)" : "var(--text-3)",
+                  display:"flex", flexDirection:"column", alignItems:"center", gap:5,
+                  borderBottom: activeTab===tab.id ? "2px solid var(--accent)" : "2px solid transparent",
+                  transition:"all 0.18s",
+                }}
+                  onMouseEnter={e=>{ if(activeTab!==tab.id){ e.currentTarget.style.background="var(--surface)"; e.currentTarget.style.color="var(--text-2)"; }}}
+                  onMouseLeave={e=>{ if(activeTab!==tab.id){ e.currentTarget.style.background="transparent"; e.currentTarget.style.color="var(--text-3)"; }}}
+                >
+                  {tab.icon}
+                  <span style={{fontSize:10, fontWeight:700, letterSpacing:0.6, textTransform:"uppercase"}}>{tab.label}</span>
+                </button>
+              </div>
             ))}
           </div>
 
-          <div style={{flex:1, overflow:"auto", padding:20}}>
-            {/* ── TAB: Textos ── */}
+          <div style={{flex:1, overflow:"auto", padding:20, background:"var(--bg)"}}>
+            {/* ── TAB: Text ── */}
             {activeTab==="text" && (
-              <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                {/* Scryfall import */}
-                <div style={{position:"relative"}}>
-                  <label style={{
-                    display:"block",fontSize:11,fontWeight:600,
-                    color:"rgba(255,255,255,0.35)",marginBottom:6,
-                    letterSpacing:0.5,textTransform:"uppercase",
-                  }}>Importar desde Scryfall</label>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+
+                {/* Scryfall search */}
+                <div style={{position:"relative",background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)"}}>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:1.1,color:"var(--text-3)",textTransform:"uppercase",marginBottom:10}}>
+                    {t("import_label")}
+                  </div>
                   <div style={{position:"relative"}}>
                     <input value={searchQuery}
                       onChange={e=>handleSearchInput(e.target.value)}
-                      placeholder="Buscar carta por nombre..."
+                      placeholder={t("search_placeholder")}
                       style={{
-                        width:"100%",padding:"10px 14px 10px 36px",
-                        background:"rgba(231,76,60,0.06)",
-                        border:"1px solid rgba(231,76,60,0.2)",
-                        borderRadius:8,color:"#e8e4df",
-                        fontSize:14,fontFamily:"inherit",
-                        outline:"none",boxSizing:"border-box",
-                        transition:"border-color 0.2s",
+                        width:"100%",padding:"9px 12px 9px 34px",
+                        background:"var(--input-bg)",border:"1px solid var(--input-border)",
+                        borderRadius:8,color:"var(--text)",fontSize:13,fontFamily:"inherit",
+                        outline:"none",boxSizing:"border-box",transition:"border-color 0.2s",
                       }}
-                      onFocus={e=>e.target.style.borderColor="rgba(231,76,60,0.5)"}
-                      onBlur={e=>{
-                        e.target.style.borderColor="rgba(231,76,60,0.2)";
-                        setTimeout(()=>setSearchResults([]),200);
-                      }}
+                      onFocus={e=>e.target.style.borderColor="var(--accent)"}
+                      onBlur={e=>{e.target.style.borderColor="var(--input-border)";setTimeout(()=>setSearchResults([]),200);}}
                     />
-                    <svg width="16" height="16" viewBox="0 0 16 16" style={{
-                      position:"absolute",left:12,top:"50%",transform:"translateY(-50%)",
-                      opacity:0.35,
-                    }}>
-                      <circle cx="6.5" cy="6.5" r="5.5" fill="none" stroke="#fff" strokeWidth="1.5"/>
-                      <line x1="10.5" y1="10.5" x2="15" y2="15" stroke="#fff" strokeWidth="1.5" strokeLinecap="round"/>
+                    <svg width="14" height="14" viewBox="0 0 16 16" style={{position:"absolute",left:11,top:"50%",transform:"translateY(-50%)",opacity:0.3,pointerEvents:"none"}}>
+                      <circle cx="6.5" cy="6.5" r="5.5" fill="none" stroke="currentColor" strokeWidth="1.5"/>
+                      <line x1="10.5" y1="10.5" x2="15" y2="15" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
                     </svg>
-                    {searchLoading && (
-                      <div style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",
-                        fontSize:11,color:"rgba(231,76,60,0.7)"}}>Buscando...</div>
-                    )}
+                    {searchLoading && <div style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",fontSize:11,color:"var(--accent)"}}>{t("searching")}</div>}
                   </div>
                   {searchResults.length>0 && (
-                    <div style={{
-                      position:"absolute",top:"100%",left:0,right:0,zIndex:50,
-                      marginTop:4,borderRadius:8,overflow:"hidden",
-                      background:"#1a1a1a",
-                      border:"1px solid rgba(231,76,60,0.2)",
-                      boxShadow:"0 8px 24px rgba(0,0,0,0.6)",
-                      maxHeight:240,overflowY:"auto",
-                    }}>
+                    <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:50,marginTop:4,borderRadius:10,overflow:"hidden",background:"var(--dropdown-bg)",border:"1px solid var(--accent-border)",boxShadow:"var(--shadow-md)",maxHeight:240,overflowY:"auto"}}>
                       {searchResults.map((name,i)=>(
-                        <div key={i}
-                          onMouseDown={()=>importCard(name)}
-                          style={{
-                            padding:"10px 14px",fontSize:13,
-                            color:"rgba(255,255,255,0.8)",cursor:"pointer",
-                            borderBottom:"1px solid rgba(255,255,255,0.04)",
-                            transition:"background 0.15s",
-                          }}
-                          onMouseEnter={e=>e.currentTarget.style.background="rgba(231,76,60,0.12)"}
+                        <div key={i} onMouseDown={()=>importCard(name)}
+                          style={{padding:"9px 14px",fontSize:13,color:"var(--text-2)",cursor:"pointer",borderBottom:"1px solid var(--border)",transition:"background 0.15s"}}
+                          onMouseEnter={e=>e.currentTarget.style.background="var(--accent-bg)"}
                           onMouseLeave={e=>e.currentTarget.style.background="transparent"}
-                        >
-                          {name}
-                        </div>
+                        >{name}</div>
                       ))}
                     </div>
                   )}
-                  {searchError && (
-                    <div style={{fontSize:11,color:"#e74c3c",marginTop:4}}>{searchError}</div>
-                  )}
+                  {searchError && <div style={{fontSize:11,color:"var(--accent)",marginTop:6}}>{searchError}</div>}
                 </div>
 
-                <div style={{height:1,background:"rgba(255,255,255,0.06)"}}/>
-
-                <Field label="Nombre de la carta" value={cardData.name}
-                  onChange={v=>updateField("name",v)}/>
-                <div>
-                  <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",marginBottom:8,
-                    fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",letterSpacing:0.5,textTransform:"uppercase"}}>
-                    <input type="checkbox" checked={!!cardData.hasNickname}
-                      onChange={e=>updateField("hasNickname",e.target.checked)}
-                      style={{accentColor:"#e74c3c"}}/>
-                    Nickname
+                {/* Name & Nickname */}
+                <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:12}}>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:1.1,color:"var(--text-3)",textTransform:"uppercase"}}>{t("field_name")}</div>
+                  <Field label="" value={cardData.name} onChange={v=>updateField("name",v)}/>
+                  <div style={{height:1,background:"var(--border)"}}/>
+                  <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:12,fontWeight:600,color:"var(--text-2)"}}>
+                    <input type="checkbox" checked={!!cardData.hasNickname} onChange={e=>updateField("hasNickname",e.target.checked)}/>
+                    {t("field_nickname_toggle")}
                   </label>
                   {cardData.hasNickname && (
-                    <Field label="Nombre visible en la carta" value={cardData.nickname}
-                      onChange={v=>updateField("nickname",v)}
-                      placeholder="Ej: El Dragón de las Sombras"/>
+                    <Field label={t("field_nickname")} value={cardData.nickname} onChange={v=>updateField("nickname",v)} placeholder={t("field_nickname_placeholder")}/>
                   )}
                 </div>
-                <Field label="Línea de tipo" value={cardData.typeLine}
-                  onChange={v=>updateField("typeLine",v)}/>
-                <div>
-                  {/* Rules text toggle + justify */}
-                  <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:8}}>
-                    <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:11,fontWeight:600,color:"rgba(255,255,255,0.35)",letterSpacing:0.5,textTransform:"uppercase"}}>
-                      <input type="checkbox" checked={cardData.hasRulesText!==false}
-                        onChange={e=>updateField("hasRulesText",e.target.checked)}
-                        style={{accentColor:"#e74c3c"}}/>
-                      Texto de reglas
+
+                {/* Type line */}
+                <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:10}}>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:1.1,color:"var(--text-3)",textTransform:"uppercase"}}>{t("field_type")}</div>
+                  <Field label="" value={cardData.typeLine} onChange={v=>updateField("typeLine",v)}/>
+                </div>
+
+                {/* Rules text */}
+                <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:10}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <label style={{display:"flex",alignItems:"center",gap:7,cursor:"pointer",fontSize:12,fontWeight:600,color:"var(--text-2)"}}>
+                      <input type="checkbox" checked={cardData.hasRulesText!==false} onChange={e=>updateField("hasRulesText",e.target.checked)}/>
+                      {t("field_rules_toggle")}
                     </label>
                     {cardData.hasRulesText!==false && (
-                      <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:11,color:"rgba(255,255,255,0.3)"}}>
-                        <input type="checkbox" checked={!!cardData.rulesJustify}
-                          onChange={e=>updateField("rulesJustify",e.target.checked)}
-                          style={{accentColor:"#e74c3c"}}/>
-                        Justificado
+                      <label style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer",fontSize:11,color:"var(--text-3)"}}>
+                        <input type="checkbox" checked={!!cardData.rulesJustify} onChange={e=>updateField("rulesJustify",e.target.checked)}/>
+                        {t("field_rules_justify")}
                       </label>
                     )}
                   </div>
                   {cardData.hasRulesText!==false && (<>
-                    {/* Formatting toolbar */}
-                    <div style={{display:"flex",gap:4,marginBottom:6}}>
-                      {[["B","**","**","bold"],["I","*","*","italic"]].map(([lbl,before,after,title])=>(
-                        <button key={lbl} title={title} onClick={()=>wrapSelection(before,after)} style={{
-                          width:28,height:26,border:"1px solid rgba(255,255,255,0.1)",
-                          borderRadius:5,background:"rgba(255,255,255,0.04)",
-                          color:"rgba(255,255,255,0.5)",cursor:"pointer",fontSize:12,
-                          fontWeight:lbl==="B"?"700":"400",
-                          fontStyle:lbl==="I"?"italic":"normal",
-                          textDecoration:lbl==="U"?"underline":"none",
+                    <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                      {[["B","**","**"],["I","*","*"]].map(([lbl,before,after])=>(
+                        <button key={lbl} onClick={()=>wrapSelection(before,after)} style={{
+                          width:26,height:24,border:"1px solid var(--border-2)",borderRadius:5,
+                          background:"var(--surface)",color:"var(--text-2)",cursor:"pointer",fontSize:12,
+                          fontWeight:lbl==="B"?"700":"400",fontStyle:lbl==="I"?"italic":"normal",
                         }}>{lbl}</button>
                       ))}
-                      <div style={{fontSize:10,color:"rgba(255,255,255,0.2)",marginLeft:4,alignSelf:"center"}}>
-                        Selecciona texto y pulsa
-                      </div>
+                      <span style={{fontSize:10,color:"var(--text-3)",marginLeft:4}}>{t("select_then_format")}</span>
                     </div>
                     <textarea ref={rulesTextareaRef} value={cardData.rulesText}
                       onChange={e=>updateField("rulesText",e.target.value)}
-                      rows={6} placeholder="Texto de reglas..."
-                      style={{
-                        width:"100%",padding:"10px 14px",
-                        background:"rgba(255,255,255,0.04)",
-                        border:"1px solid rgba(255,255,255,0.08)",
-                        borderRadius:8,color:"#e8e4df",
-                        fontSize:14,fontFamily:"inherit",
-                        outline:"none",resize:"vertical",boxSizing:"border-box",
-                        transition:"border-color 0.2s",
-                      }}
-                      onFocus={e=>e.target.style.borderColor="rgba(231,76,60,0.4)"}
-                      onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/>
-                    <div style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:6,lineHeight:1.5}}>
-                      Usa <b style={{color:"rgba(255,255,255,0.5)"}}>{"{W} {U} {B} {R} {G} {2} {T}"}</b> para símbolos · <b style={{color:"rgba(255,255,255,0.5)"}}>**negrita**</b> · <b style={{color:"rgba(255,255,255,0.5)"}}>*cursiva*</b>
-                    </div>
+                      rows={5} placeholder={t("field_rules_placeholder")}
+                      style={{width:"100%",padding:"9px 12px",background:"var(--input-bg)",border:"1px solid var(--input-border)",borderRadius:8,color:"var(--text)",fontSize:13,fontFamily:"inherit",outline:"none",resize:"vertical",boxSizing:"border-box",transition:"border-color 0.2s"}}
+                      onFocus={e=>e.target.style.borderColor="var(--accent-border)"}
+                      onBlur={e=>e.target.style.borderColor="var(--input-border)"}/>
+                    <div style={{fontSize:10,color:"var(--text-3)",lineHeight:1.5}}>{t("field_rules_hint")}</div>
                   </>)}
                 </div>
-                <Field label="Texto de ambientación (itálica)" value={cardData.flavorText}
-                  onChange={v=>updateField("flavorText",v)} multiline rows={2}/>
-                <Field label="Artista" value={cardData.artistName}
-                  onChange={v=>updateField("artistName",v)} placeholder="Nombre del artista"/>
+
+                {/* Flavor & Artist */}
+                <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:12}}>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:1.1,color:"var(--text-3)",textTransform:"uppercase"}}>{t("field_flavor")}</div>
+                  <Field label="" value={cardData.flavorText} onChange={v=>updateField("flavorText",v)} multiline rows={2}/>
+                  <div style={{height:1,background:"var(--border)"}}/>
+                  <Field label={t("field_artist")} value={cardData.artistName} onChange={v=>updateField("artistName",v)} placeholder={t("field_artist_placeholder")}/>
+                </div>
+
               </div>
             )}
 
-            {/* ── TAB: Arte ── */}
+            {/* ── TAB: Art ── */}
             {activeTab==="art" && (
-              <div style={{display:"flex",flexDirection:"column",gap:0}}>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {/* Art subtabs */}
-                <div style={{display:"flex",marginBottom:16,borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
-                  {[{id:"upload",label:"Cargar imagen"},{id:"generate",label:"Generar con IA"}].map(t=>(
-                    <button key={t.id} onClick={()=>setArtSubTab(t.id)} style={{
-                      flex:1, padding:"9px 0", border:"none", cursor:"pointer",
-                      background:artSubTab===t.id ? "rgba(192,57,43,0.2)" : "rgba(255,255,255,0.02)",
-                      color:artSubTab===t.id ? "#e74c3c" : "rgba(255,255,255,0.4)",
+                <div style={{display:"flex",gap:6,background:"var(--panel)",borderRadius:12,padding:8,border:"1px solid var(--border)"}}>
+                  {[
+                    {id:"upload", label:t("art_upload_tab"), icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>},
+                    {id:"generate", label:t("art_generate_tab"), icon:<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>},
+                  ].map(sub=>(
+                    <button key={sub.id} onClick={()=>setArtSubTab(sub.id)} style={{
+                      flex:1, padding:"8px 0", border:"none", cursor:"pointer",borderRadius:8,
+                      background:artSubTab===sub.id ? "var(--accent-bg)" : "transparent",
+                      color:artSubTab===sub.id ? "var(--accent)" : "var(--text-3)",
                       fontSize:12, fontWeight:600, letterSpacing:0.4,
-                      borderRight:t.id==="upload" ? "1px solid rgba(255,255,255,0.08)" : "none",
-                      transition:"all 0.2s",
-                    }}>{t.label}</button>
+                      outline:artSubTab===sub.id ? "1px solid var(--accent-border)" : "1px solid transparent",
+                      transition:"all 0.18s", display:"flex", alignItems:"center", justifyContent:"center", gap:6,
+                    }}>{sub.icon}{sub.label}</button>
                   ))}
                 </div>
 
                 {/* Subtab: Cargar imagen */}
                 {artSubTab==="upload" && (
-                  <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                    <div
-                      onClick={()=>fileInputRef.current?.click()}
-                      onDrop={handleDrop}
-                      onDragOver={e=>e.preventDefault()}
-                      style={{
-                        border:"2px dashed rgba(255,255,255,0.15)",
-                        borderRadius:12, padding:32,
-                        textAlign:"center", cursor:"pointer",
-                        transition:"border-color 0.2s",
-                        background:"rgba(255,255,255,0.02)",
-                      }}
-                      onMouseEnter={e=>e.currentTarget.style.borderColor="rgba(231,76,60,0.5)"}
-                      onMouseLeave={e=>e.currentTarget.style.borderColor="rgba(255,255,255,0.15)"}
-                    >
-                      <div style={{fontSize:32,marginBottom:8}}>🎨</div>
-                      <div style={{fontSize:14,color:"rgba(255,255,255,0.5)"}}>
-                        Click o arrastra una imagen
+                  <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                    {/* Drop zone */}
+                    <div style={{background:"var(--panel)",borderRadius:12,border:"1px solid var(--border)"}}>
+                      <div onClick={()=>fileInputRef.current?.click()} onDrop={handleDrop} onDragOver={e=>e.preventDefault()}
+                        style={{padding:"28px 20px",textAlign:"center",cursor:"pointer",borderRadius:12,transition:"background 0.18s"}}
+                        onMouseEnter={e=>e.currentTarget.style.background="var(--surface)"}
+                        onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                        <div style={{fontSize:28,marginBottom:6}}>🎨</div>
+                        <div style={{fontSize:13,fontWeight:600,color:"var(--text-2)"}}>{t("art_drop")}</div>
+                        <div style={{fontSize:11,color:"var(--text-3)",marginTop:3}}>{t("art_formats")}</div>
+                        <input ref={fileInputRef} type="file" accept="image/*" onChange={handleArtUpload} style={{display:"none"}}/>
                       </div>
-                      <div style={{fontSize:11,color:"rgba(255,255,255,0.25)",marginTop:4}}>
-                        JPG, PNG, WebP
-                      </div>
-                      <input ref={fileInputRef} type="file" accept="image/*"
-                        onChange={handleArtUpload} style={{display:"none"}}/>
                     </div>
-                    {artImage && (
-                      <>
+
+                    {artImage && (<>
+                      {/* Preview thumbnail — draggable */}
+                      <div style={{background:"var(--panel)",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
                         <div style={{
-                          width:"100%", height:180, borderRadius:10, overflow:"hidden",
-                          border:"1px solid rgba(255,255,255,0.08)", position:"relative",
-                          cursor:"grab",
+                          width:"100%",height:170,cursor:"grab",
                           backgroundImage:`url(${artImage})`,
                           backgroundSize:`${artPosition.zoom*100}%`,
                           backgroundPosition:`${artPosition.x}% ${artPosition.y}%`,
                           backgroundRepeat:"no-repeat",
-                        }}
-                          onMouseDown={(e)=>{
-                            e.preventDefault();
-                            artDragRef.current = {
-                              startX: e.clientX, startY: e.clientY,
-                              x: artPosition.x, y: artPosition.y,
-                              W: e.currentTarget.offsetWidth,
-                              H: e.currentTarget.offsetHeight,
-                              zoom: artPosition.zoom,
-                            };
-                          }}
-                        />
-                        <div style={{fontSize:10,fontWeight:700,letterSpacing:1.2,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",padding:"8px 0 4px"}}>Posición</div>
-                        <SliderField label="Escala" value={Math.round(artPosition.zoom*100)}
-                          onChange={v=>setArtPosition(p=>({...p,zoom:v/100}))} min={50} max={300} suffix="%"/>
-                        <SliderField label="Horizontal" value={Math.round(artPosition.x)}
-                          onChange={v=>setArtPosition(p=>({...p,x:v}))} min={-50} max={150}/>
-                        <SliderField label="Vertical" value={Math.round(artPosition.y)}
-                          onChange={v=>setArtPosition(p=>({...p,y:v}))} min={-50} max={150}/>
-                        <div style={{fontSize:10,fontWeight:700,letterSpacing:1.2,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",padding:"8px 0 4px"}}>Marco de reglas</div>
-                        <SliderField label="Inicio" value={artPosition.overlayStart ?? 20}
-                          onChange={v=>setArtPosition(p=>({...p,overlayStart:v}))} min={0} max={85} suffix="%"/>
-                        <SliderField label="Transición" value={artPosition.overlayTransition ?? 50}
-                          onChange={v=>setArtPosition(p=>({...p,overlayTransition:v}))} min={2} max={80} suffix="%"/>
-                        <SliderField label="Intensidad" value={Math.round(artPosition.overlayOpacity*100)}
-                          onChange={v=>setArtPosition(p=>({...p,overlayOpacity:v/100}))} min={0} max={100} suffix="%"/>
-                        <div style={{fontSize:10,fontWeight:700,letterSpacing:1.2,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",padding:"8px 0 4px"}}>Ajustes de imagen</div>
-                        <SliderField label="Brillo" value={artPosition.brightness}
-                          onChange={v=>setArtPosition(p=>({...p,brightness:v}))} min={50} max={200} suffix="%"/>
-                        <SliderField label="Contraste" value={artPosition.contrast}
-                          onChange={v=>setArtPosition(p=>({...p,contrast:v}))} min={50} max={200} suffix="%"/>
-                        <SliderField label="Saturación" value={artPosition.saturate}
-                          onChange={v=>setArtPosition(p=>({...p,saturate:v}))} min={0} max={300} suffix="%"/>
-                        <button onClick={()=>{setArtImage(null);setArtPosition({x:50,y:50,zoom:1.5,overlayOpacity:1,overlayStart:20,overlayTransition:50,brightness:105,contrast:105,saturate:110,sharpness:0});}}
-                          style={{
-                            padding:"8px 16px", border:"1px solid rgba(255,255,255,0.1)",
-                            borderRadius:8, background:"rgba(255,255,255,0.04)",
-                            color:"rgba(255,255,255,0.5)", cursor:"pointer", fontSize:13,
-                          }}>
-                          Quitar imagen
-                        </button>
-                      </>
-                    )}
+                        }} onMouseDown={(e)=>{
+                          e.preventDefault();
+                          artDragRef.current={startX:e.clientX,startY:e.clientY,x:artPosition.x,y:artPosition.y,W:e.currentTarget.offsetWidth,H:e.currentTarget.offsetHeight,zoom:artPosition.zoom};
+                        }}/>
+                      </div>
+
+                      {/* Position card */}
+                      <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:12}}>
+                        <div style={{fontSize:10,fontWeight:700,letterSpacing:1.1,color:"var(--text-3)",textTransform:"uppercase"}}>{t("group_position")}</div>
+                        <SliderField label={t("slider_scale")} value={Math.round(artPosition.zoom*100)} onChange={v=>setArtPosition(p=>({...p,zoom:v/100}))} min={50} max={300} suffix="%"/>
+                        <SliderField label={t("slider_h")} value={Math.round(artPosition.x)} onChange={v=>setArtPosition(p=>({...p,x:v}))} min={-50} max={150}/>
+                        <SliderField label={t("slider_v")} value={Math.round(artPosition.y)} onChange={v=>setArtPosition(p=>({...p,y:v}))} min={-50} max={150}/>
+                      </div>
+
+                      {/* Rules frame card */}
+                      <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:12}}>
+                        <div style={{fontSize:10,fontWeight:700,letterSpacing:1.1,color:"var(--text-3)",textTransform:"uppercase"}}>{t("group_rules_frame")}</div>
+                        <SliderField label={t("slider_start")} value={artPosition.overlayStart??20} onChange={v=>setArtPosition(p=>({...p,overlayStart:v}))} min={0} max={85} suffix="%"/>
+                        <SliderField label={t("slider_transition")} value={artPosition.overlayTransition??50} onChange={v=>setArtPosition(p=>({...p,overlayTransition:v}))} min={2} max={80} suffix="%"/>
+                        <SliderField label={t("slider_intensity")} value={Math.round(artPosition.overlayOpacity*100)} onChange={v=>setArtPosition(p=>({...p,overlayOpacity:v/100}))} min={0} max={100} suffix="%"/>
+                      </div>
+
+                      {/* Adjustments card */}
+                      <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:12}}>
+                        <div style={{fontSize:10,fontWeight:700,letterSpacing:1.1,color:"var(--text-3)",textTransform:"uppercase"}}>{t("group_adjustments")}</div>
+                        <SliderField label={t("slider_brightness")} value={artPosition.brightness} onChange={v=>setArtPosition(p=>({...p,brightness:v}))} min={50} max={200} suffix="%"/>
+                        <SliderField label={t("slider_contrast")} value={artPosition.contrast} onChange={v=>setArtPosition(p=>({...p,contrast:v}))} min={50} max={200} suffix="%"/>
+                        <SliderField label={t("slider_saturation")} value={artPosition.saturate} onChange={v=>setArtPosition(p=>({...p,saturate:v}))} min={0} max={300} suffix="%"/>
+                      </div>
+
+                      <button onClick={()=>{setArtImage(null);setArtPosition({x:50,y:50,zoom:1.5,overlayOpacity:1,overlayStart:20,overlayTransition:50,brightness:105,contrast:105,saturate:110,sharpness:0});}}
+                        style={{padding:"9px",border:"1px solid var(--border-2)",borderRadius:10,background:"var(--panel)",color:"var(--text-3)",cursor:"pointer",fontSize:12,fontWeight:600,transition:"all 0.18s",width:"100%",display:"flex",alignItems:"center",justifyContent:"center",gap:7}}
+                        onMouseEnter={e=>{e.currentTarget.style.borderColor="var(--accent-border)";e.currentTarget.style.color="var(--accent)";}}
+                        onMouseLeave={e=>{e.currentTarget.style.borderColor="var(--border-2)";e.currentTarget.style.color="var(--text-3)";}}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+                          <path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
+                        </svg>
+                        {t("art_remove")}
+                      </button>
+                    </>)}
                   </div>
                 )}
 
@@ -1183,80 +1177,69 @@ export default function MTGProxyGenerator(){
 
             {/* ── TAB: Stats ── */}
             {activeTab==="stats" && (
-              <div style={{display:"flex",flexDirection:"column",gap:16}}>
-                <Field label="Costo de maná (separado por comas)"
-                  value={manaInput} onChange={handleManaChange}
-                  placeholder="Ej: 2, U, R"/>
-                <div style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:-8}}>
-                  Símbolos: W U B R G C X 0-16
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+
+                {/* Mana cost card */}
+                <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:10}}>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:1.1,color:"var(--text-3)",textTransform:"uppercase"}}>{t("field_mana")}</div>
+                  <Field label="" value={manaInput} onChange={handleManaChange} placeholder={t("mana_placeholder")}/>
+                  <div style={{fontSize:10,color:"var(--text-3)"}}>{t("mana_hint")}</div>
+                  {cardData.manaCost.length>0 && (
+                    <div style={{display:"flex",gap:4,flexWrap:"wrap",paddingTop:2}}>
+                      <ManaCostDisplay manaCost={cardData.manaCost} size={28} customImages={customImages}/>
+                    </div>
+                  )}
                 </div>
-                {cardData.manaCost.length>0 && (
-                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                    <ManaCostDisplay manaCost={cardData.manaCost} size={28} customImages={customImages}/>
-                  </div>
-                )}
-                <div style={{display:"flex",alignItems:"center",gap:12,marginTop:8}}>
-                  <label style={{
-                    display:"flex", alignItems:"center", gap:8, cursor:"pointer",
-                    fontSize:13, color:"rgba(255,255,255,0.6)",
-                  }}>
-                    <input type="checkbox" checked={cardData.isCreature}
-                      onChange={e=>updateField("isCreature",e.target.checked)}
-                      style={{accentColor:"#e74c3c"}}/>
-                    Es criatura (mostrar P/T)
-                  </label>
+
+                {/* Card options card */}
+                <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:0}}>
+                  {[
+                    {checked:cardData.isCreature, onChange:e=>updateField("isCreature",e.target.checked), label:t("is_creature")},
+                    {checked:showProxyLabel, onChange:e=>setShowProxyLabel(e.target.checked), label:t("show_proxy")},
+                  ].map((row,i,arr)=>(
+                    <label key={i} style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer",padding:"11px 0",borderBottom:i<arr.length-1?"1px solid var(--border)":"none",fontSize:13,color:"var(--text-2)",fontWeight:500}}>
+                      <input type="checkbox" checked={row.checked} onChange={row.onChange}/>
+                      {row.label}
+                    </label>
+                  ))}
                 </div>
-                <div style={{display:"flex",alignItems:"center",gap:12,marginTop:4}}>
-                  <label style={{
-                    display:"flex", alignItems:"center", gap:8, cursor:"pointer",
-                    fontSize:13, color:"rgba(255,255,255,0.6)",
-                  }}>
-                    <input type="checkbox" checked={showProxyLabel}
-                      onChange={e=>setShowProxyLabel(e.target.checked)}
-                      style={{accentColor:"#e74c3c"}}/>
-                    Mostrar "Custom Proxy"
-                  </label>
-                </div>
+
+                {/* Power / Toughness */}
                 {cardData.isCreature && (
-                  <div style={{display:"flex",gap:12}}>
-                    <Field label="Fuerza" value={cardData.power}
-                      onChange={v=>updateField("power",v)} small/>
-                    <Field label="Resistencia" value={cardData.toughness}
-                      onChange={v=>updateField("toughness",v)} small/>
+                  <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)",display:"flex",gap:12}}>
+                    <Field label={t("field_power")} value={cardData.power} onChange={v=>updateField("power",v)} small/>
+                    <Field label={t("field_toughness")} value={cardData.toughness} onChange={v=>updateField("toughness",v)} small/>
                   </div>
                 )}
               </div>
             )}
 
-            {/* ── TAB: Símbolos (custom mana images) ── */}
+            {/* ── TAB: Symbols ── */}
             {activeTab==="symbols" && (
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:8,lineHeight:1.5}}>
-                  Sube imágenes para reemplazar cualquier símbolo de maná. Se usarán tanto en el costo de la carta como en el texto de reglas.
+                <div style={{fontSize:12,color:"var(--text-2)",lineHeight:1.6,background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)"}}>
+                  {t("symbols_hint")}
                 </div>
-                {["W","U","B","R","G","C","X","T","WP","UP","BP","RP","GP"].map(sym=>(
-                  <ManaImageRow key={sym} symbol={sym}
-                    customImg={customImages[sym]}
-                    onUpload={(e)=>handleManaImageUpload(sym,e)}
-                    onRemove={()=>removeManaImage(sym)}
-                    customImages={customImages}
-                  />
-                ))}
-                <div style={{
-                  height:1, background:"rgba(255,255,255,0.06)", margin:"8px 0",
-                }}/>
-                <div style={{fontSize:11,color:"rgba(255,255,255,0.3)",marginBottom:4}}>
-                  Genéricos (números)
-                </div>
-                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-                  {Array.from({length:17},(_,i)=>String(i)).map(sym=>(
-                    <ManaImageMini key={sym} symbol={sym}
-                      customImg={customImages[sym]}
-                      onUpload={(e)=>handleManaImageUpload(sym,e)}
-                      onRemove={()=>removeManaImage(sym)}
-                      customImages={customImages}
-                    />
+                <div style={{background:"var(--panel)",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
+                  {["W","U","B","R","G","C","X","T","WP","UP","BP","RP","GP"].map((sym,i,arr)=>(
+                    <div key={sym} style={{borderBottom:i<arr.length-1?"1px solid var(--border)":"none"}}>
+                      <ManaImageRow symbol={sym} customImg={customImages[sym]}
+                        onUpload={(e)=>handleManaImageUpload(sym,e)}
+                        onRemove={()=>removeManaImage(sym)}
+                        customImages={customImages}/>
+                    </div>
                   ))}
+                </div>
+                <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)"}}>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:1.1,color:"var(--text-3)",textTransform:"uppercase",marginBottom:12}}>{t("generics")}</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {Array.from({length:17},(_,i)=>String(i)).map(sym=>(
+                      <ManaImageMini key={sym} symbol={sym} customImg={customImages[sym]}
+                        onUpload={(e)=>handleManaImageUpload(sym,e)}
+                        onRemove={()=>removeManaImage(sym)}
+                        customImages={customImages}/>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}
@@ -1266,7 +1249,7 @@ export default function MTGProxyGenerator(){
         {/* Preview Area */}
         <div style={{
           flex:1, display:"flex", alignItems:"center", justifyContent:"center",
-          background:"radial-gradient(ellipse at center,#1a1a1a 0%,#0d0d0d 100%)",
+          background:"var(--preview-bg)",
           padding:24, overflow:"auto", minWidth:0,
           flexDirection:"column", gap:20,
         }}>
@@ -1274,14 +1257,25 @@ export default function MTGProxyGenerator(){
             <CardPreview cardData={cardData} artImage={artImage} artPosition={artPosition} customImages={customImages} showProxyLabel={showProxyLabel}/>
           </div>
           <button onClick={saveCard} disabled={exporting} style={{
-            padding:"10px 28px", border:"none", borderRadius:8,
-            background: exporting ? "rgba(255,255,255,0.05)" : "linear-gradient(135deg,#c0392b,#e74c3c)",
-            color:"#fff", fontSize:14, fontWeight:600, cursor: exporting?"wait":"pointer",
-            letterSpacing:0.5,
-            boxShadow: exporting ? "none" : "0 2px 8px rgba(192,57,43,0.4)",
+            padding:"10px 28px", border:"none", borderRadius:9,
+            background: exporting ? "var(--surface-2)" : "linear-gradient(135deg,#c0392b,#e74c3c)",
+            color: exporting ? "var(--text-3)" : "#fff",
+            fontSize:13, fontWeight:700, cursor: exporting?"wait":"pointer",
+            letterSpacing:0.5, display:"flex", alignItems:"center", gap:8,
+            boxShadow: exporting ? "none" : "var(--accent-glow)",
             transition:"all 0.2s",
           }}>
-            {exporting ? "Exportando..." : "Guardar como PNG"}
+            {exporting ? (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-.18-4.56"/>
+              </svg>
+            ) : (
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+            )}
+            {exporting ? t("saving") : t("save")}
           </button>
 
           {/* Hidden export card (no border-radius, full scale) */}
@@ -1816,9 +1810,9 @@ function SDGeneratePanel({sdConfig,setSdConfig,sdGenerating,sdError,sdPreview,sd
 function Field({label,value,onChange,multiline,rows,placeholder,small}){
   const inputStyle={
     width:"100%", padding:small ? "8px 10px" : "10px 14px",
-    background:"rgba(255,255,255,0.04)",
-    border:"1px solid rgba(255,255,255,0.08)",
-    borderRadius:8, color:"#e8e4df",
+    background:"var(--input-bg)",
+    border:"1px solid var(--input-border)",
+    borderRadius:8, color:"var(--text)",
     fontSize:14, fontFamily:"inherit",
     outline:"none", resize:multiline ? "vertical" : "none",
     transition:"border-color 0.2s", boxSizing:"border-box",
@@ -1827,21 +1821,21 @@ function Field({label,value,onChange,multiline,rows,placeholder,small}){
     <div style={{flex:small ? 1 : undefined}}>
       <label style={{
         display:"block", fontSize:11, fontWeight:600,
-        color:"rgba(255,255,255,0.35)", marginBottom:6,
+        color:"var(--text-3)", marginBottom:6,
         letterSpacing:0.5, textTransform:"uppercase",
       }}>{label}</label>
       {multiline ? (
         <textarea value={value} onChange={e=>onChange(e.target.value)}
           rows={rows||3} placeholder={placeholder}
           style={inputStyle}
-          onFocus={e=>e.target.style.borderColor="rgba(231,76,60,0.4)"}
-          onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/>
+          onFocus={e=>e.target.style.borderColor="var(--accent-border)"}
+          onBlur={e=>e.target.style.borderColor="var(--input-border)"}/>
       ) : (
         <input value={value} onChange={e=>onChange(e.target.value)}
           placeholder={placeholder}
           style={inputStyle}
-          onFocus={e=>e.target.style.borderColor="rgba(231,76,60,0.4)"}
-          onBlur={e=>e.target.style.borderColor="rgba(255,255,255,0.08)"}/>
+          onFocus={e=>e.target.style.borderColor="var(--accent-border)"}
+          onBlur={e=>e.target.style.borderColor="var(--input-border)"}/>
       )}
     </div>
   );
@@ -1850,17 +1844,20 @@ function Field({label,value,onChange,multiline,rows,placeholder,small}){
 /* ── Slider field ── */
 function SliderField({label,value,onChange,min,max,suffix}){
   return (
-    <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+    <div style={{marginBottom:2}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:5}}>
         <label style={{
-          fontSize:11, fontWeight:600, color:"rgba(255,255,255,0.35)",
-          letterSpacing:0.5, textTransform:"uppercase",
+          fontSize:11, fontWeight:600, color:"var(--text-3)",
+          letterSpacing:0.4, textTransform:"uppercase",
         }}>{label}</label>
-        <span style={{fontSize:12,color:"rgba(255,255,255,0.3)"}}>{value}{suffix||"%"}</span>
+        <span style={{
+          fontSize:11, fontWeight:600, color:"var(--accent)",
+          background:"var(--accent-bg)", borderRadius:4,
+          padding:"1px 6px", letterSpacing:0.3,
+        }}>{value}{suffix||""}</span>
       </div>
       <input type="range" min={min} max={max} value={value}
-        onChange={e=>onChange(Number(e.target.value))}
-        style={{width:"100%",accentColor:"#e74c3c",height:4,cursor:"pointer"}}/>
+        onChange={e=>onChange(Number(e.target.value))}/>
     </div>
   );
 }
