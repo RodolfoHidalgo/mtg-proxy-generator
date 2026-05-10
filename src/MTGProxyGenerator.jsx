@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import { toPng } from "html-to-image";
 
 const ALL_MANA = ["W","U","B","R","G","C","X","WP","UP","BP","RP","GP","0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"];
@@ -560,6 +560,51 @@ export default function MTGProxyGenerator(){
   const exportRef = useRef(null);
   const searchTimeout = useRef(null);
   const rulesTextareaRef = useRef(null);
+  const artPositionRef = useRef(artPosition);
+  artPositionRef.current = artPosition;
+
+  useEffect(()=>{
+    const el = cardRef.current;
+    if(!el || !artImage) return;
+    let drag = null;
+    const onDown = (e)=>{
+      if(e.button !== 0) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      drag = {
+        startX: e.clientX, startY: e.clientY,
+        x: artPositionRef.current.x, y: artPositionRef.current.y,
+        W: rect.width, H: rect.height,
+        zoom: artPositionRef.current.zoom,
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", onUp);
+    };
+    const onMove = (e)=>{
+      if(!drag) return;
+      const {startX,startY,x,y,W,H,zoom} = drag;
+      const denomX = W*(1-zoom);
+      const denomY = H*(1-zoom);
+      const rawDx = Math.abs(denomX)>0.01 ? (e.clientX-startX)*100/denomX : 0;
+      const rawDy = Math.abs(denomY)>0.01 ? (e.clientY-startY)*100/denomY : 0;
+      const newX = Math.min(150,Math.max(-50, x+rawDx));
+      const newY = Math.min(150,Math.max(-50, y+rawDy));
+      if(newX !== x+rawDx){ drag.startX=e.clientX; drag.x=newX; }
+      if(newY !== y+rawDy){ drag.startY=e.clientY; drag.y=newY; }
+      setArtPosition(p=>({...p, x:newX, y:newY}));
+    };
+    const onUp = ()=>{
+      drag = null;
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    el.addEventListener("mousedown", onDown);
+    return ()=>{
+      el.removeEventListener("mousedown", onDown);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  },[artImage]);
 
   const wrapSelection = (before, after) => {
     const el = rulesTextareaRef.current;
@@ -1061,30 +1106,38 @@ export default function MTGProxyGenerator(){
                         <div style={{
                           width:"100%", height:180, borderRadius:10, overflow:"hidden",
                           border:"1px solid rgba(255,255,255,0.08)", position:"relative",
-                        }}>
-                          <div style={{
-                            position:"absolute",
-                            width:"100%", height:"100%",
-                            backgroundImage:`url(${artImage})`,
-                            backgroundSize:`${artPosition.zoom*100}%`,
-                            backgroundPosition:`${artPosition.x}% ${artPosition.y}%`,
-                            backgroundRepeat:"no-repeat",
-                          }}/>
-                        </div>
+                          cursor:"grab",
+                          backgroundImage:`url(${artImage})`,
+                          backgroundSize:`${artPosition.zoom*100}%`,
+                          backgroundPosition:`${artPosition.x}% ${artPosition.y}%`,
+                          backgroundRepeat:"no-repeat",
+                        }}
+                          onMouseDown={(e)=>{
+                            e.preventDefault();
+                            artDragRef.current = {
+                              startX: e.clientX, startY: e.clientY,
+                              x: artPosition.x, y: artPosition.y,
+                              W: e.currentTarget.offsetWidth,
+                              H: e.currentTarget.offsetHeight,
+                              zoom: artPosition.zoom,
+                            };
+                          }}
+                        />
+                        <div style={{fontSize:10,fontWeight:700,letterSpacing:1.2,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",padding:"8px 0 4px"}}>Posición</div>
                         <SliderField label="Escala" value={Math.round(artPosition.zoom*100)}
                           onChange={v=>setArtPosition(p=>({...p,zoom:v/100}))} min={50} max={300} suffix="%"/>
-                        <SliderField label="Posición horizontal" value={artPosition.x}
-                          onChange={v=>setArtPosition(p=>({...p,x:v}))} min={0} max={100}/>
-                        <SliderField label="Posición vertical" value={artPosition.y}
-                          onChange={v=>setArtPosition(p=>({...p,y:v}))} min={0} max={100}/>
-                        <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"4px 0"}}/>
-                        <SliderField label="Inicio del oscurecido" value={artPosition.overlayStart ?? 20}
+                        <SliderField label="Horizontal" value={Math.round(artPosition.x)}
+                          onChange={v=>setArtPosition(p=>({...p,x:v}))} min={-50} max={150}/>
+                        <SliderField label="Vertical" value={Math.round(artPosition.y)}
+                          onChange={v=>setArtPosition(p=>({...p,y:v}))} min={-50} max={150}/>
+                        <div style={{fontSize:10,fontWeight:700,letterSpacing:1.2,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",padding:"8px 0 4px"}}>Marco de reglas</div>
+                        <SliderField label="Inicio" value={artPosition.overlayStart ?? 20}
                           onChange={v=>setArtPosition(p=>({...p,overlayStart:v}))} min={0} max={85} suffix="%"/>
-                        <SliderField label="Zona de transición" value={artPosition.overlayTransition ?? 50}
+                        <SliderField label="Transición" value={artPosition.overlayTransition ?? 50}
                           onChange={v=>setArtPosition(p=>({...p,overlayTransition:v}))} min={2} max={80} suffix="%"/>
-                        <SliderField label="Intensidad del oscurecido" value={Math.round(artPosition.overlayOpacity*100)}
+                        <SliderField label="Intensidad" value={Math.round(artPosition.overlayOpacity*100)}
                           onChange={v=>setArtPosition(p=>({...p,overlayOpacity:v/100}))} min={0} max={100} suffix="%"/>
-                        <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"4px 0"}}/>
+                        <div style={{fontSize:10,fontWeight:700,letterSpacing:1.2,color:"rgba(255,255,255,0.25)",textTransform:"uppercase",padding:"8px 0 4px"}}>Ajustes de imagen</div>
                         <SliderField label="Brillo" value={artPosition.brightness}
                           onChange={v=>setArtPosition(p=>({...p,brightness:v}))} min={50} max={200} suffix="%"/>
                         <SliderField label="Contraste" value={artPosition.contrast}
@@ -1217,7 +1270,7 @@ export default function MTGProxyGenerator(){
           padding:24, overflow:"auto", minWidth:0,
           flexDirection:"column", gap:20,
         }}>
-          <div ref={cardRef} style={{transform:"scale(0.85)",transformOrigin:"center"}}>
+          <div ref={cardRef} style={{transform:"scale(0.85)",transformOrigin:"center", cursor: artImage ? "grab" : "default"}}>
             <CardPreview cardData={cardData} artImage={artImage} artPosition={artPosition} customImages={customImages} showProxyLabel={showProxyLabel}/>
           </div>
           <button onClick={saveCard} disabled={exporting} style={{
