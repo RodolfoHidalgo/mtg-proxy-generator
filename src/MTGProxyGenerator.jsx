@@ -1,7 +1,7 @@
 import { useState, useRef, useCallback } from "react";
 import { toPng } from "html-to-image";
 
-const ALL_MANA = ["W","U","B","R","G","C","X","0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"];
+const ALL_MANA = ["W","U","B","R","G","C","X","WP","UP","BP","RP","GP","0","1","2","3","4","5","6","7","8","9","10","11","12","13","14","15","16"];
 
 const DEFAULT_MANA_IMAGES = {
   W: "/symbols/W.png",
@@ -11,11 +11,17 @@ const DEFAULT_MANA_IMAGES = {
   G: "/symbols/G.png",
   C: "/symbols/C.png",
   T: "/symbols/T.png",
+  WP: "/symbols/WP.webp",
+  UP: "/symbols/UP.webp",
+  BP: "/symbols/BP.webp",
+  RP: "/symbols/RP.png",
+  GP: "/symbols/GP.webp",
 };
 
 const MANA_BG = {
   W:"#F9F5E3",U:"#0E68AB",B:"#2B2522",R:"#D3202A",G:"#00733E",
   C:"#CAC5C0",X:"#CAC5C0",
+  WP:"#F9F5E3",UP:"#0E68AB",BP:"#2B2522",RP:"#D3202A",GP:"#00733E",
   ...Object.fromEntries(Array.from({length:17},(_,i)=>[String(i),"#CAC5C0"])),
 };
 
@@ -185,7 +191,8 @@ function parseLine(line,customImages){
   let last=0, m;
   while((m=regex.exec(line))!==null){
     if(m.index>last) parts.push({type:"text",value:line.slice(last,m.index)});
-    const sym=m[1].toUpperCase();
+    let sym=m[1].toUpperCase();
+    if(sym.endsWith("/P")) sym=sym.replace("/P","P"); // {W/P} → WP
     if(sym==="T"){
       parts.push({type:"tap"});
     } else if(ALL_MANA.includes(sym)){
@@ -248,7 +255,8 @@ const BLEED=24; // ~3mm at card scale (500px / 63mm ≈ 7.94 px/mm)
 const IDENTITY_COLORS = {W:"#F9F5E3",U:"#0E68AB",B:"#4B3D36",R:"#D3202A",G:"#00733E"};
 function getSeparatorGradient(manaCost){
   if(!manaCost||manaCost.length===0) return "linear-gradient(to right, #888, #666, transparent)";
-  const colors = [...new Set(manaCost.filter(s=>["W","U","B","R","G"].includes(s)))];
+  const PHYREXIAN_COLOR = {WP:"W",UP:"U",BP:"B",RP:"R",GP:"G"};
+  const colors = [...new Set(manaCost.map(s=>PHYREXIAN_COLOR[s]||s).filter(s=>["W","U","B","R","G"].includes(s)))];
   if(colors.length===0) return "linear-gradient(to right, #888, #666, transparent)";
   if(colors.length>=5) return "linear-gradient(to right, #D4AF37, #F2D06B, #D4AF37, rgba(212,175,55,0.3), transparent)";
   if(colors.length===1) {
@@ -738,7 +746,11 @@ export default function MTGProxyGenerator(){
     if(!mc) return [];
     const matches = mc.match(/\{([^}]+)\}/g);
     if(!matches) return [];
-    return matches.map(m=>m.replace(/[{}]/g,"").toUpperCase()).filter(s=>ALL_MANA.includes(s));
+    return matches.map(m=>{
+      const raw = m.replace(/[{}]/g,"").toUpperCase();
+      if(raw.endsWith("/P")) return raw.replace("/P","P"); // {W/P} → WP
+      return raw;
+    }).filter(s=>ALL_MANA.includes(s));
   };
 
   const searchScryfall = (query)=>{
@@ -1169,7 +1181,7 @@ export default function MTGProxyGenerator(){
                 <div style={{fontSize:13,color:"rgba(255,255,255,0.5)",marginBottom:8,lineHeight:1.5}}>
                   Sube imágenes para reemplazar cualquier símbolo de maná. Se usarán tanto en el costo de la carta como en el texto de reglas.
                 </div>
-                {["W","U","B","R","G","C","X","T"].map(sym=>(
+                {["W","U","B","R","G","C","X","T","WP","UP","BP","RP","GP"].map(sym=>(
                   <ManaImageRow key={sym} symbol={sym}
                     customImg={customImages[sym]}
                     onUpload={(e)=>handleManaImageUpload(sym,e)}
@@ -1234,7 +1246,7 @@ export default function MTGProxyGenerator(){
 /* ── Mana image upload row (for WUBRGCXT) ── */
 function ManaImageRow({symbol,customImg,onUpload,onRemove,customImages}){
   const ref=useRef(null);
-  const LABELS={W:"Blanco (W)",U:"Azul (U)",B:"Negro (B)",R:"Rojo (R)",G:"Verde (G)",C:"Incoloro (C)",X:"Variable (X)",T:"Tap (T)"};
+  const LABELS={W:"Blanco (W)",U:"Azul (U)",B:"Negro (B)",R:"Rojo (R)",G:"Verde (G)",C:"Incoloro (C)",X:"Variable (X)",T:"Tap (T)",WP:"Phyrexiano Blanco",UP:"Phyrexiano Azul",BP:"Phyrexiano Negro",RP:"Phyrexiano Rojo",GP:"Phyrexiano Verde"};
   const hasDefault = !!DEFAULT_MANA_IMAGES[symbol];
   const isCustom = !!customImg;
   const statusLabel = isCustom ? "Custom" : hasDefault ? "Default" : "SVG";
