@@ -156,6 +156,42 @@ function ManaCostDisplay({manaCost,size=22,customImages}){
 }
 
 /* ── Parse rules text: {W}, {2}, {T} etc become inline mana symbols ── */
+/* ── Adaptive text box: shrinks font until content fits maxHeight ── */
+function TextFitBox({rulesText, flavorText, maxHeight, baseFontSize, flavorFontSize, customImages, rulesJustify, color="#fff", flavorColor="rgba(255,255,255,0.7)"}){
+  const [fontSize, setFontSize] = useState(baseFontSize);
+  const ref = useRef(null);
+
+  useEffect(()=>{ setFontSize(baseFontSize); }, [rulesText, flavorText, baseFontSize, maxHeight]);
+
+  useEffect(()=>{
+    if(!ref.current) return;
+    if(ref.current.scrollHeight > maxHeight + 2 && fontSize > 7){
+      setFontSize(f => Math.max(7, f - 0.5));
+    }
+  });
+
+  const hasRules = !!rulesText;
+  const hasFlavor = !!flavorText;
+
+  return (
+    <div ref={ref} style={{overflow:"hidden", maxHeight}}>
+      {hasRules && (
+        <div style={{fontSize, color, lineHeight:1.5, textAlign:rulesJustify?"justify":"left"}}>
+          <RulesTextRender text={rulesText} customImages={customImages}/>
+        </div>
+      )}
+      {hasRules && hasFlavor && (
+        <div style={{height:1, background:"rgba(255,255,255,0.25)", margin:"6px 0"}}/>
+      )}
+      {hasFlavor && (
+        <div style={{fontSize:Math.max(fontSize-1, 7), color:flavorColor, lineHeight:1.4, fontStyle:"italic"}}>
+          {flavorText}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function RulesTextRender({text,customImages}){
   if(!text) return null;
   const lines = text.split("\n");
@@ -250,7 +286,77 @@ function PTSymbol({type,size=18}){
 
 const CARD_W=500;
 const CARD_H=700;
-const BLEED=24; // ~3mm at card scale (500px / 63mm ≈ 7.94 px/mm)
+const BLEED=24;
+
+/* ── Frame system ── */
+// WOT frame structure in 500×700 card px (derived from pixel analysis):
+//   Header band (creature name): y=20–75   BRIGHT
+//   Art window (transparent):    y=80–392
+//   Separator band (name/type):  y=395–432 BRIGHT
+//   Rules text area:             y=435–640 DARK
+//   Bottom margin:               y=650–700
+const WOT_LAYOUT = {
+  artInset: null, useOverlay: false,
+  layout: {
+    manaCost: { top:40,  right:40 },
+    name:     { top:40,  left:43,  right:110, fontSize:28 },
+    nickname: { top:380, left:43,  fontSize:12 },
+    typeLine: { top:402, left:40,  right:28,  fontSize:24 },
+    rulesBox: { top:442, left:45,  right:45,  maxHeight:160, fontSize:16 },
+    artist:   { bottom:26, left:28 },
+    pt:       { bottom:32, right:28, fontSize:20, letterSpacing:-1 },
+  },
+};
+const WOT_CREATURE_LAYOUT = {
+  artInset: null, useOverlay: false,
+  layout: {
+    manaCost: { top:40,  right:40 },
+    name:     { top:40,  left:43,  right:117, fontSize:28 },
+    nickname: { top:358, left:28,  fontSize:12 },
+    typeLine: { top:406, left:40,  right:28,  fontSize:20 },
+    rulesBox: { top:449, left:45,  right:58,  maxHeight:189, fontSize:20 },
+    artist:   { bottom:28, left:28 },
+    pt:       { bottom:42, right:40, fontSize:22, letterSpacing:-1 },
+  },
+};
+
+const FRAME_COLORS = ["white","blue","black","red","green","gold"];
+const MANA_TO_COLOR = {W:"white",U:"blue",B:"black",R:"red",G:"green",WP:"white",UP:"blue",BP:"black",RP:"red",GP:"green"};
+
+// Build WOT frames dynamically
+const WOT_FRAMES = {};
+FRAME_COLORS.forEach(c=>{
+  ["sorcery","creature"].forEach(t=>{
+    const path = `/frames/${c}-${t}.png`;
+    WOT_FRAMES[`wot_${c}_${t}`] = {
+      id:`wot_${c}_${t}`, name:`WOT ${c} ${t}`,
+      image: path,
+      ...(t==="creature" ? WOT_CREATURE_LAYOUT : WOT_LAYOUT),
+    };
+  });
+});
+
+const FRAMES = {
+  default: {
+    id:"default", name:"Default", image:null,
+    artInset:null, useOverlay:true,
+    textBlock:{ bottom:28, padding:"0 24px" },
+    ptBottom:56,
+  },
+  ...WOT_FRAMES,
+};
+
+// Auto-select WOT frame based on mana cost + card type
+function autoWotFrame(manaCost, isCreature){
+  const colors = [...new Set(
+    manaCost.map(s=>MANA_TO_COLOR[s]).filter(Boolean)
+  )];
+  const colorName = colors.length===0 ? "gold"
+    : colors.length===1 ? colors[0]
+    : "gold";
+  const type = isCreature ? "creature" : "sorcery";
+  return `wot_${colorName}_${type}`;
+}
 
 /* ── Color identity gradient for separator ── */
 const IDENTITY_COLORS = {W:"#F9F5E3",U:"#0E68AB",B:"#4B3D36",R:"#D3202A",G:"#00733E"};
@@ -346,8 +452,15 @@ function getOverlayGradient(start=20, intensity=1, transition=50){
 }
 
 /* ══════════════════════ CARD PREVIEW ══════════════════════ */
-function CardPreview({cardData,artImage,artPosition,customImages,exporting=false,showProxyLabel=true}){
+function CardPreview({cardData,artImage,artPosition,customImages,frameId="default",frameLayout=null,exporting=false,showProxyLabel=true}){
   const{name,typeLine,rulesText,flavorText,power,toughness,manaCost,isCreature,artistName,hasRulesText,rulesJustify,hasNickname,nickname}=cardData;
+  const resolvedId = frameId==="wot_auto" ? autoWotFrame(manaCost, isCreature) : frameId;
+  const frame = FRAMES[resolvedId] ?? FRAMES.default;
+  // Use live frameLayout if provided, else fall back to frame config
+  const liveLayout = frameLayout && frame.layout
+    ? (isCreature ? frameLayout.creature : frameLayout.sorcery)
+    : frame.layout;
+  const inset = frame.artInset;
 
   return (
     <div style={{
@@ -359,12 +472,18 @@ function CardPreview({cardData,artImage,artPosition,customImages,exporting=false
       fontFamily:"'Palatino Linotype','Palatino','Georgia',serif",
       flexShrink:0,
     }}>
-      {/* Art — edge to edge, no bleed inset */}
-      <div style={{position:"absolute",top:0,left:0,right:0,bottom:0,overflow:"hidden"}}>
+      {/* Art layer — full-bleed or clipped to frame art window */}
+      <div style={{
+        position:"absolute",
+        top: inset ? inset.top : 0,
+        left: inset ? inset.left : 0,
+        right: inset ? inset.right : 0,
+        bottom: inset ? inset.bottom : 0,
+        overflow:"hidden",
+      }}>
         {artImage?(
           <div style={{
-            position:"absolute",
-            top:0,left:0,right:0,bottom:0,
+            position:"absolute", top:0, left:0, right:0, bottom:0,
             backgroundImage:`url(${artImage})`,
             backgroundSize:`${artPosition.zoom*100}%`,
             backgroundPosition:`${artPosition.x}% ${artPosition.y}%`,
@@ -377,117 +496,150 @@ function CardPreview({cardData,artImage,artPosition,customImages,exporting=false
             background:"linear-gradient(135deg,#2c3e50 0%,#1a1a2e 40%,#16213e 60%,#0f3460 100%)",
             display:"flex",alignItems:"center",justifyContent:"center",
           }}>
-            <span style={{color:"rgba(255,255,255,0.15)",fontSize:64,fontWeight:300}}>ART</span>
+            {!inset && <span style={{color:"rgba(255,255,255,0.15)",fontSize:64,fontWeight:300}}>ART</span>}
           </div>
         )}
       </div>
 
-      {/* Gradient overlay — edge to edge like art */}
-      <div style={{
-        position:"absolute",bottom:0,left:0,right:0,height:"100%",
-        background:getOverlayGradient(artPosition.overlayStart ?? 20, artPosition.overlayOpacity ?? 1, artPosition.overlayTransition ?? 50),
-        pointerEvents:"none",
-      }}/>
-
-      {/* ── Text block — inset by bleed ── */}
-      <div style={{
-        position:"absolute",bottom: (isCreature ? 56 : 28) + BLEED, left:BLEED, right:BLEED,
-        padding:"0 24px", zIndex:5,
-        display:"flex", flexDirection:"column",
-      }}>
-        {/* Mana cost */}
-        {manaCost && manaCost.length>0 && (
-          <div style={{marginBottom:5}}>
-            <ManaCostDisplay manaCost={manaCost} size={26} customImages={customImages}/>
-          </div>
-        )}
-
-        {/* Name / Nickname */}
+      {/* Gradient overlay (default frame only) */}
+      {frame.useOverlay && (
         <div style={{
-          fontSize: hasNickname && nickname ? 26 : 28, fontWeight:700, color:"#fff",
-          textShadow:"0 2px 8px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,1)",
-          letterSpacing:0.5, lineHeight:1.15,
-          fontFamily:"'Palatino Linotype','Palatino',serif",
-        }}>
-          {hasNickname && nickname ? nickname : (name || "Card Name")}
-        </div>
-        {hasNickname && nickname && (
-          <div style={{
-            fontSize:13, fontWeight:400, color:"rgba(255,255,255,0.5)",
-            textShadow:"0 1px 3px rgba(0,0,0,0.9)",
-            letterSpacing:0.3, lineHeight:1.2, marginTop:1,
-            fontFamily:"'Palatino Linotype','Palatino',serif",
-            fontStyle:"italic",
-          }}>
-            {name}
-          </div>
-        )}
-
-        {/* Type line */}
-        <div style={{
-          fontSize:15, color:"#e8a838", fontWeight:400,
-          textShadow:"0 1px 4px rgba(0,0,0,0.9)",
-          letterSpacing:1.8, marginTop:2,
-          fontFamily:"'Palatino Linotype','Palatino',serif",
-          fontVariant:"small-caps",
-        }}>
-          {typeLine || "Type Line"}
-        </div>
-
-        {/* Separator bar — color identity */}
-        <div style={{
-          height:1.5, marginTop:6, marginBottom:10,
-          background:getSeparatorGradient(manaCost),
-          borderRadius:1,
+          position:"absolute",bottom:0,left:0,right:0,height:"100%",
+          background:getOverlayGradient(artPosition.overlayStart ?? 20, artPosition.overlayOpacity ?? 1, artPosition.overlayTransition ?? 50),
+          pointerEvents:"none",
         }}/>
-
-        {/* Rules text */}
-        {hasRulesText !== false && (
-        <div style={{maxHeight:200, overflow:"hidden"}}>
-          <div style={{
-            fontSize:16, color:"#f0ede8", lineHeight:1.55,
-            textShadow:"0 1px 3px rgba(0,0,0,0.8)",
-            textAlign: rulesJustify ? "justify" : "left",
-          }}>
-            <RulesTextRender text={rulesText||""} customImages={customImages}/>
-          </div>
-          {flavorText && (
-            <div style={{
-              fontSize:14.5, color:"rgba(240,237,232,0.65)", lineHeight:1.4,
-              fontStyle:"italic", marginTop:8,
-              textShadow:"0 1px 3px rgba(0,0,0,0.8)",
-            }}>
-              {flavorText}
-            </div>
-          )}
-        </div>
-        )}
-      </div>
-
-      {/* P/T — inset by bleed */}
-      {isCreature && (
-        <div style={{
-          position:"absolute", bottom:16+BLEED, right:20+BLEED, zIndex:10,
-          display:"flex", alignItems:"center", gap:10,
-        }}>
-          <div style={{display:"flex",alignItems:"center",gap:4}}>
-            <PTSymbol type="power" size={20}/>
-            <span style={{fontSize:22,fontWeight:700,color:"#fff",textShadow:"0 1px 4px rgba(0,0,0,0.9)",fontFamily:"'Palatino Linotype',serif"}}>{power}</span>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:4}}>
-            <PTSymbol type="toughness" size={20}/>
-            <span style={{fontSize:22,fontWeight:700,color:"#fff",textShadow:"0 1px 4px rgba(0,0,0,0.9)",fontFamily:"'Palatino Linotype',serif"}}>{toughness}</span>
-          </div>
-        </div>
       )}
 
-      {/* Artist — inset by bleed */}
-      <div style={{
-        position:"absolute", bottom:16+BLEED, left:20+BLEED, zIndex:10,
-        fontSize:10, color:"rgba(255,255,255,0.45)", letterSpacing:0.5,
-      }}>
-        {artistName ? `Art: ${artistName}` : ""}{showProxyLabel ? " • Custom Proxy" : ""}
-      </div>
+      {/* Built-in frame — pre-processed PNG with transparency */}
+      {frame.image && (
+        <img src={frame.image} alt="frame" style={{
+          position:"absolute", top:0, left:0, width:"100%", height:"100%",
+          objectFit:"fill", pointerEvents:"none", zIndex:3,
+        }}/>
+      )}
+
+      {liveLayout ? (
+        /* ── WOT / frame-specific absolute layout ── */
+        <>
+          {/* Mana cost */}
+          {manaCost?.length>0 && (
+            <div style={{position:"absolute", top:liveLayout.manaCost.top, right:liveLayout.manaCost.right, zIndex:6}}>
+              <ManaCostDisplay manaCost={manaCost} size={22} customImages={customImages}/>
+            </div>
+          )}
+
+          {/* Name */}
+          <div style={{
+            position:"absolute", top:liveLayout.name.top,
+            left:liveLayout.name.left, right:liveLayout.name.right, zIndex:6,
+            fontSize:liveLayout.name.fontSize, fontWeight:800, color:"#000",
+            letterSpacing:0.3, lineHeight:1.1,
+            fontFamily:"'Palatino Linotype','Palatino',serif",
+            whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis",
+          }}>
+            {hasNickname && nickname ? nickname : (name || "Card Name")}
+          </div>
+          {hasNickname && nickname && (
+            <div style={{
+              position:"absolute", top:liveLayout.nickname.top, left:liveLayout.nickname.left, zIndex:6,
+              fontSize:liveLayout.nickname.fontSize, fontStyle:"italic", color:"rgba(0,0,0,0.6)",
+              fontFamily:"'Palatino Linotype','Palatino',serif",
+            }}>{name}</div>
+          )}
+
+          {/* Type line */}
+          <div style={{
+            position:"absolute", top:liveLayout.typeLine.top,
+            left:liveLayout.typeLine.left, right:liveLayout.typeLine.right, zIndex:6,
+            fontSize:liveLayout.typeLine.fontSize, color:"#000", fontWeight:800,
+            letterSpacing:0.8, fontVariant:"small-caps",
+            fontFamily:"'Palatino Linotype','Palatino',serif",
+            whiteSpace:"nowrap", overflow:"hidden",
+          }}>{typeLine || "Type Line"}</div>
+
+          {/* Rules + Flavor — adaptive TextFitBox */}
+          {hasRulesText !== false && (
+            <div style={{position:"absolute", top:liveLayout.rulesBox.top, left:liveLayout.rulesBox.left, right:liveLayout.rulesBox.right, zIndex:6}}>
+              <TextFitBox
+                rulesText={rulesText||""}
+                flavorText={flavorText}
+                maxHeight={liveLayout.rulesBox.maxHeight}
+                baseFontSize={liveLayout.rulesBox.fontSize}
+                customImages={customImages}
+                rulesJustify={rulesJustify}
+              />
+            </div>
+          )}
+
+          {/* P/T */}
+          {isCreature && (
+            <div style={{position:"absolute", bottom:liveLayout.pt.bottom, right:liveLayout.pt.right, zIndex:10, display:"flex", alignItems:"center", gap:2}}>
+              <span style={{fontSize:liveLayout.pt.fontSize??20, fontWeight:800, color:"#000", fontFamily:"'Palatino Linotype',serif", letterSpacing:liveLayout.pt.letterSpacing??-1}}>{power}</span>
+              <span style={{fontSize:(liveLayout.pt.fontSize??20)-2, fontWeight:700, color:"#000", margin:"0 1px"}}>/</span>
+              <span style={{fontSize:liveLayout.pt.fontSize??20, fontWeight:800, color:"#000", fontFamily:"'Palatino Linotype',serif", letterSpacing:liveLayout.pt.letterSpacing??-1}}>{toughness}</span>
+            </div>
+          )}
+
+          {/* Artist */}
+          <div style={{position:"absolute", bottom:liveLayout.artist.bottom, left:liveLayout.artist.left, zIndex:10, fontSize:15, color:"#fff", letterSpacing:0.4}}>
+            {artistName ? `Art: ${artistName}` : ""}{showProxyLabel ? " • Custom Proxy" : ""}
+          </div>
+        </>
+      ) : (
+        /* ── Default: text block anchored from bottom ── */
+        <>
+          <div style={{
+            position:"absolute",
+            bottom: (isCreature ? 56 : 28) + BLEED,
+            left:BLEED, right:BLEED,
+            padding:"0 24px", zIndex:5,
+            display:"flex", flexDirection:"column",
+          }}>
+            {manaCost?.length>0 && (
+              <div style={{marginBottom:5}}>
+                <ManaCostDisplay manaCost={manaCost} size={26} customImages={customImages}/>
+              </div>
+            )}
+            <div style={{fontSize:hasNickname&&nickname?26:28, fontWeight:700, color:"#fff", textShadow:"0 2px 8px rgba(0,0,0,0.9), 0 1px 2px rgba(0,0,0,1)", letterSpacing:0.5, lineHeight:1.15, fontFamily:"'Palatino Linotype','Palatino',serif"}}>
+              {hasNickname && nickname ? nickname : (name || "Card Name")}
+            </div>
+            {hasNickname && nickname && (
+              <div style={{fontSize:13, fontWeight:400, color:"rgba(255,255,255,0.5)", textShadow:"0 1px 3px rgba(0,0,0,0.9)", letterSpacing:0.3, lineHeight:1.2, marginTop:1, fontFamily:"'Palatino Linotype','Palatino',serif", fontStyle:"italic"}}>{name}</div>
+            )}
+            <div style={{fontSize:15, color:"#e8a838", fontWeight:400, textShadow:"0 1px 4px rgba(0,0,0,0.9)", letterSpacing:1.8, marginTop:2, fontFamily:"'Palatino Linotype','Palatino',serif", fontVariant:"small-caps"}}>
+              {typeLine || "Type Line"}
+            </div>
+            <div style={{height:1.5, marginTop:6, marginBottom:10, background:getSeparatorGradient(manaCost), borderRadius:1}}/>
+            {hasRulesText !== false && (
+              <TextFitBox
+                rulesText={rulesText||""}
+                flavorText={flavorText}
+                maxHeight={200}
+                baseFontSize={16}
+                customImages={customImages}
+                rulesJustify={rulesJustify}
+                color="#f0ede8"
+                flavorColor="rgba(240,237,232,0.65)"
+              />
+            )}
+          </div>
+          {isCreature && (
+            <div style={{position:"absolute", bottom:16+BLEED, right:20+BLEED, zIndex:10, display:"flex", alignItems:"center", gap:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                <PTSymbol type="power" size={20}/>
+                <span style={{fontSize:22,fontWeight:700,color:"#fff",textShadow:"0 1px 4px rgba(0,0,0,0.9)",fontFamily:"'Palatino Linotype',serif"}}>{power}</span>
+              </div>
+              <div style={{display:"flex",alignItems:"center",gap:4}}>
+                <PTSymbol type="toughness" size={20}/>
+                <span style={{fontSize:22,fontWeight:700,color:"#fff",textShadow:"0 1px 4px rgba(0,0,0,0.9)",fontFamily:"'Palatino Linotype',serif"}}>{toughness}</span>
+              </div>
+            </div>
+          )}
+          <div style={{position:"absolute", bottom:16+BLEED, left:20+BLEED, zIndex:10, fontSize:10, color:"rgba(255,255,255,0.45)", letterSpacing:0.5}}>
+            {artistName ? `Art: ${artistName}` : ""}{showProxyLabel ? " • Custom Proxy" : ""}
+          </div>
+        </>
+      )}
 
       {/* Border */}
       <div style={{
@@ -529,6 +681,15 @@ export default function MTGProxyGenerator(){
   const [exporting,setExporting] = useState(false);
   const [showProxyLabel,setShowProxyLabel] = useState(true);
   const [artSubTab,setArtSubTab] = useState("upload");
+  const [frameId,setFrameId] = useState("default");
+  const [calOpen,setCalOpen] = useState(false);
+  const [frameLayout,setFrameLayout] = useState(()=>({
+    sorcery: JSON.parse(JSON.stringify(WOT_LAYOUT.layout)),
+    creature: JSON.parse(JSON.stringify(WOT_CREATURE_LAYOUT.layout)),
+  }));
+  const [upscaleConfig,setUpscaleConfig] = useState({scale:2, upscaler:"R-ESRGAN 4x+"});
+  const [upscaleLoading,setUpscaleLoading] = useState(false);
+  const [upscaleError,setUpscaleError] = useState("");
   const [sdConfig,setSdConfig] = useState({
     url:"http://127.0.0.1:7860",
     mode:"basic",
@@ -564,10 +725,13 @@ export default function MTGProxyGenerator(){
   const rulesTextareaRef = useRef(null);
   const artPositionRef = useRef(artPosition);
   artPositionRef.current = artPosition;
+  const artImageRef = useRef(artImage);
+  artImageRef.current = artImage;
 
+  const hasArt = !!artImage;
   useEffect(()=>{
     const el = cardRef.current;
-    if(!el || !artImage) return;
+    if(!el || !artImageRef.current) return;
     let drag = null;
     const onDown = (e)=>{
       if(e.button !== 0) return;
@@ -606,7 +770,7 @@ export default function MTGProxyGenerator(){
       window.removeEventListener("mousemove", onMove);
       window.removeEventListener("mouseup", onUp);
     };
-  },[artImage]);
+  },[hasArt]);
 
   const wrapSelection = (before, after) => {
     const el = rulesTextareaRef.current;
@@ -688,6 +852,36 @@ export default function MTGProxyGenerator(){
   const removeManaImage = (symbol)=>{
     setCustomImages(prev=>{const n={...prev};delete n[symbol];return n;});
   };
+
+  /* ── Upscale existing image via SD extras ── */
+  const upscaleImage = useCallback(async ()=>{
+    if(!artImageRef.current) return;
+    setUpscaleLoading(true);
+    setUpscaleError("");
+    try {
+      const base64 = artImageRef.current.split(",")[1] ?? artImageRef.current;
+      const res = await fetch(`${sdConfig.url}/sdapi/v1/extra-single-image`, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          image: base64,
+          upscaling_resize: upscaleConfig.scale,
+          upscaler_1: upscaleConfig.upscaler,
+          gfpgan_visibility: 0,
+          codeformer_visibility: 0,
+        }),
+      });
+      const data = await res.json();
+      if(data.image){
+        setArtImage(`data:image/png;base64,${data.image}`);
+      } else {
+        setUpscaleError("No se recibió imagen del servidor");
+      }
+    } catch(e){
+      setUpscaleError("Error al conectar con Stable Diffusion");
+    }
+    setUpscaleLoading(false);
+  },[sdConfig.url, upscaleConfig]);
 
   /* ── Stable Diffusion ── */
   const generateWithSD = useCallback(async ()=>{
@@ -1085,6 +1279,112 @@ export default function MTGProxyGenerator(){
                 {/* Subtab: Cargar imagen */}
                 {artSubTab==="upload" && (
                   <div style={{display:"flex",flexDirection:"column",gap:10}}>
+
+                    {/* Frame selector */}
+                    <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:10}}>
+                      <div style={{fontSize:10,fontWeight:700,letterSpacing:1.1,color:"var(--text-3)",textTransform:"uppercase"}}>Card Frame</div>
+                      <div style={{display:"flex",gap:6}}>
+                        {[
+                          {id:"default", label:"Default", preview:null},
+                          {id:"wot_auto", label:"WOT Auto", preview:"/frames/gold-sorcery.png"},
+                        ].map(opt=>(
+                          <button key={opt.id} onClick={()=>setFrameId(opt.id)} style={{
+                            flex:1, padding:"8px 6px", border:"1px solid", borderRadius:8,
+                            cursor:"pointer", fontSize:11, fontWeight:600, transition:"all 0.18s",
+                            borderColor: frameId===opt.id ? "var(--accent)" : "var(--border-2)",
+                            background: frameId===opt.id ? "var(--accent-bg)" : "var(--surface)",
+                            color: frameId===opt.id ? "var(--accent)" : "var(--text-2)",
+                            display:"flex", flexDirection:"column", alignItems:"center", gap:4,
+                          }}>
+                            {opt.preview ? (
+                              <img src={opt.preview} alt={opt.label} style={{width:32,height:44,objectFit:"fill",borderRadius:3,opacity:0.85}}/>
+                            ) : (
+                              <div style={{width:32,height:44,borderRadius:3,background:"linear-gradient(135deg,#2c3e50,#0f3460)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"rgba(255,255,255,0.4)"}}>CSS</div>
+                            )}
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                      {frameId==="wot_auto" && (
+                        <div style={{fontSize:10,color:"var(--text-3)",lineHeight:1.5}}>
+                          Frame: <span style={{color:"var(--accent)",fontWeight:600}}>{autoWotFrame(cardData.manaCost,cardData.isCreature).replace("wot_","").replace(/_/g," ")}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Frame calibration panel */}
+                    {frameId==="wot_auto" && (() => {
+                      const mode = cardData.isCreature ? "creature" : "sorcery";
+                      const lay = frameLayout[mode];
+                      const setLay = (key, subkey, val) => setFrameLayout(prev=>({
+                        ...prev,
+                        [mode]:{ ...prev[mode], [key]:{ ...prev[mode][key], [subkey]:val }}
+                      }));
+                      const toggle = () => setCalOpen(o=>!o);
+                      const Cal = ({label, obj, k, subk, min=0, max=700}) => (
+                        <div style={{display:"flex",alignItems:"center",gap:6,padding:"4px 0",borderBottom:"1px solid var(--border)"}}>
+                          <span style={{fontSize:10,color:"var(--text-3)",width:80,flexShrink:0}}>{label}</span>
+                          <input type="range" min={min} max={max} value={obj[subk]??0}
+                            onChange={e=>setLay(k,subk,Number(e.target.value))}
+                            style={{flex:1}}/>
+                          <input type="number" min={min} max={max} value={obj[subk]??0}
+                            onChange={e=>setLay(k,subk,Number(e.target.value))}
+                            style={{
+                              width:46, padding:"2px 4px", borderRadius:5,
+                              border:"1px solid var(--border-2)", background:"var(--surface)",
+                              color:"var(--accent)", fontSize:11, fontWeight:700,
+                              textAlign:"center",
+                            }}/>
+                        </div>
+                      );
+                      return (
+                        <div style={{background:"var(--panel)",borderRadius:12,border:"1px solid var(--border)",overflow:"hidden"}}>
+                          {/* Header — always visible */}
+                          <div onClick={toggle} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",cursor:"pointer"}}>
+                            <span style={{fontSize:10,fontWeight:700,letterSpacing:1.1,color:"var(--text-3)",textTransform:"uppercase"}}>
+                              Calibración · {mode}
+                            </span>
+                            <span style={{fontSize:14,color:"var(--text-3)",transition:"transform 0.2s",display:"inline-block",transform:calOpen?"rotate(180deg)":"rotate(0deg)"}}>▾</span>
+                          </div>
+                          {calOpen && <div style={{padding:"0 14px 14px",display:"flex",flexDirection:"column",gap:2,borderTop:"1px solid var(--border)"}}>
+                          <div style={{display:"flex",justifyContent:"flex-end",paddingTop:10,marginBottom:6}}>
+                            <button onClick={()=>{
+                              const json = JSON.stringify(frameLayout, null, 2);
+                              navigator.clipboard.writeText(json);
+                            }} style={{padding:"4px 10px",borderRadius:6,border:"1px solid var(--accent-border)",background:"var(--accent-bg)",color:"var(--accent)",fontSize:10,fontWeight:700,cursor:"pointer"}}>
+                              Copiar config
+                            </button>
+                          </div>
+                          <div style={{fontSize:10,fontWeight:600,color:"var(--text-3)",padding:"6px 0 2px",textTransform:"uppercase",letterSpacing:0.8}}>Costo de maná</div>
+                          <Cal label="Top" obj={lay.manaCost} k="manaCost" subk="top" max={600}/>
+                          <Cal label="Right" obj={lay.manaCost} k="manaCost" subk="right" max={400}/>
+                          <div style={{fontSize:10,fontWeight:600,color:"var(--text-3)",padding:"6px 0 2px",textTransform:"uppercase",letterSpacing:0.8}}>Nombre</div>
+                          <Cal label="Top" obj={lay.name} k="name" subk="top" max={600}/>
+                          <Cal label="Left" obj={lay.name} k="name" subk="left" max={200}/>
+                          <Cal label="Right" obj={lay.name} k="name" subk="right" max={400}/>
+                          <Cal label="Font" obj={lay.name} k="name" subk="fontSize" min={8} max={32}/>
+                          <div style={{fontSize:10,fontWeight:600,color:"var(--text-3)",padding:"6px 0 2px",textTransform:"uppercase",letterSpacing:0.8}}>Tipo</div>
+                          <Cal label="Top" obj={lay.typeLine} k="typeLine" subk="top" max={650}/>
+                          <Cal label="Left" obj={lay.typeLine} k="typeLine" subk="left" max={200}/>
+                          <Cal label="Right" obj={lay.typeLine} k="typeLine" subk="right" max={200}/>
+                          <Cal label="Font" obj={lay.typeLine} k="typeLine" subk="fontSize" min={8} max={24}/>
+                          <div style={{fontSize:10,fontWeight:600,color:"var(--text-3)",padding:"6px 0 2px",textTransform:"uppercase",letterSpacing:0.8}}>Texto de reglas</div>
+                          <Cal label="Top" obj={lay.rulesBox} k="rulesBox" subk="top" max={650}/>
+                          <Cal label="Left" obj={lay.rulesBox} k="rulesBox" subk="left" max={100}/>
+                          <Cal label="Right" obj={lay.rulesBox} k="rulesBox" subk="right" max={100}/>
+                          <Cal label="MaxHeight" obj={lay.rulesBox} k="rulesBox" subk="maxHeight" min={40} max={300}/>
+                          <Cal label="Font" obj={lay.rulesBox} k="rulesBox" subk="fontSize" min={8} max={22}/>
+                          <div style={{fontSize:10,fontWeight:600,color:"var(--text-3)",padding:"6px 0 2px",textTransform:"uppercase",letterSpacing:0.8}}>P/T & Artista</div>
+                          <Cal label="PT Bottom" obj={lay.pt} k="pt" subk="bottom" max={200}/>
+                          <Cal label="PT Right" obj={lay.pt} k="pt" subk="right" max={200}/>
+                          <Cal label="PT Font" obj={lay.pt} k="pt" subk="fontSize" min={8} max={36}/>
+                          <Cal label="PT Spacing" obj={lay.pt} k="pt" subk="letterSpacing" min={-5} max={5}/>
+                          <Cal label="Artist Bottom" obj={lay.artist} k="artist" subk="bottom" max={200}/>
+                          </div>}
+                        </div>
+                      );
+                    })()}
+
                     {/* Drop zone */}
                     <div style={{background:"var(--panel)",borderRadius:12,border:"1px solid var(--border)"}}>
                       <div onClick={()=>fileInputRef.current?.click()} onDrop={handleDrop} onDragOver={e=>e.preventDefault()}
@@ -1135,6 +1435,58 @@ export default function MTGProxyGenerator(){
                         <SliderField label={t("slider_brightness")} value={artPosition.brightness} onChange={v=>setArtPosition(p=>({...p,brightness:v}))} min={50} max={200} suffix="%"/>
                         <SliderField label={t("slider_contrast")} value={artPosition.contrast} onChange={v=>setArtPosition(p=>({...p,contrast:v}))} min={50} max={200} suffix="%"/>
                         <SliderField label={t("slider_saturation")} value={artPosition.saturate} onChange={v=>setArtPosition(p=>({...p,saturate:v}))} min={0} max={300} suffix="%"/>
+                      </div>
+
+                      {/* Upscale card */}
+                      <div style={{background:"var(--panel)",borderRadius:12,padding:14,border:"1px solid var(--border)",display:"flex",flexDirection:"column",gap:12}}>
+                        <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round">
+                            <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+                            <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                          </svg>
+                          <span style={{fontSize:10,fontWeight:700,letterSpacing:1.1,color:"var(--text-3)",textTransform:"uppercase"}}>Upscale con IA</span>
+                        </div>
+                        <div style={{display:"flex",gap:8}}>
+                          <div style={{flex:1}}>
+                            <div style={{fontSize:10,color:"var(--text-3)",marginBottom:5,fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Escala</div>
+                            <div style={{display:"flex",gap:4}}>
+                              {[2,4].map(s=>(
+                                <button key={s} onClick={()=>setUpscaleConfig(c=>({...c,scale:s}))} style={{
+                                  flex:1,padding:"6px 0",border:"1px solid",borderRadius:7,fontSize:12,fontWeight:700,cursor:"pointer",transition:"all 0.15s",
+                                  borderColor: upscaleConfig.scale===s ? "var(--accent)" : "var(--border-2)",
+                                  background: upscaleConfig.scale===s ? "var(--accent-bg)" : "var(--surface)",
+                                  color: upscaleConfig.scale===s ? "var(--accent)" : "var(--text-2)",
+                                }}>{s}×</button>
+                              ))}
+                            </div>
+                          </div>
+                          <div style={{flex:2}}>
+                            <div style={{fontSize:10,color:"var(--text-3)",marginBottom:5,fontWeight:600,textTransform:"uppercase",letterSpacing:0.8}}>Upscaler</div>
+                            <select value={upscaleConfig.upscaler} onChange={e=>setUpscaleConfig(c=>({...c,upscaler:e.target.value}))}
+                              style={{width:"100%",padding:"6px 8px",borderRadius:7,border:"1px solid var(--border-2)",background:"var(--surface)",color:"var(--text)",fontSize:12,cursor:"pointer"}}>
+                              {["R-ESRGAN 4x+","R-ESRGAN 4x+ Anime6B","ESRGAN_4x","Lanczos","Nearest"].map(u=>(
+                                <option key={u} value={u}>{u}</option>
+                              ))}
+                              {sdUpscalers.filter(u=>!["R-ESRGAN 4x+","R-ESRGAN 4x+ Anime6B","ESRGAN_4x","Lanczos","Nearest"].includes(u)).map(u=>(
+                                <option key={u} value={u}>{u}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <button onClick={upscaleImage} disabled={upscaleLoading} style={{
+                          padding:"9px",border:"none",borderRadius:9,cursor:upscaleLoading?"wait":"pointer",
+                          background:"linear-gradient(135deg,#6c3483,#8e44ad)",
+                          color:"#fff",fontSize:12,fontWeight:700,letterSpacing:0.4,
+                          display:"flex",alignItems:"center",justifyContent:"center",gap:7,
+                          opacity:upscaleLoading?0.7:1,transition:"opacity 0.2s",
+                        }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+                            <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+                            <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                          </svg>
+                          {upscaleLoading ? "Procesando..." : "Mejorar resolución"}
+                        </button>
+                        {upscaleError && <div style={{fontSize:11,color:"var(--accent)"}}>{upscaleError}</div>}
                       </div>
 
                       <button onClick={()=>{setArtImage(null);setArtPosition({x:50,y:50,zoom:1.5,overlayOpacity:1,overlayStart:20,overlayTransition:50,brightness:105,contrast:105,saturate:110,sharpness:0});}}
@@ -1254,7 +1606,7 @@ export default function MTGProxyGenerator(){
           flexDirection:"column", gap:20,
         }}>
           <div ref={cardRef} style={{transform:"scale(0.85)",transformOrigin:"center", cursor: artImage ? "grab" : "default"}}>
-            <CardPreview cardData={cardData} artImage={artImage} artPosition={artPosition} customImages={customImages} showProxyLabel={showProxyLabel}/>
+            <CardPreview cardData={cardData} artImage={artImage} artPosition={artPosition} customImages={customImages} frameId={frameId} frameLayout={frameLayout} showProxyLabel={showProxyLabel}/>
           </div>
           <button onClick={saveCard} disabled={exporting} style={{
             padding:"10px 28px", border:"none", borderRadius:9,
@@ -1281,7 +1633,7 @@ export default function MTGProxyGenerator(){
           {/* Hidden export card (no border-radius, full scale) */}
           <div style={{position:"fixed",left:"-9999px",top:0}}>
             <div ref={exportRef}>
-              <CardPreview cardData={cardData} artImage={artImage} artPosition={artPosition} customImages={customImages} exporting={true} showProxyLabel={showProxyLabel}/>
+              <CardPreview cardData={cardData} artImage={artImage} artPosition={artPosition} customImages={customImages} frameId={frameId} frameLayout={frameLayout} exporting={true} showProxyLabel={showProxyLabel}/>
             </div>
           </div>
         </div>
